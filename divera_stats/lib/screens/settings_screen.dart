@@ -423,13 +423,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   child: Column(
                     children: [
                       const Text(
-                        'Divera Stats v1.0.0',
+                        'Divera Stats v1.0.1',
                         style: TextStyle(
                             color: Colors.grey, fontWeight: FontWeight.bold),
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        'Build 100 • © Marcel Gäding',
+                        'Build 112 • © Marcel Gäding',
                         style: TextStyle(
                             color: Colors.grey.shade600, fontSize: 12),
                       ),
