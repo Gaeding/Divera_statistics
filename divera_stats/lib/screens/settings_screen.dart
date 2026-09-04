@@ -2,11 +2,11 @@ import 'dart:io';
 import 'package:android_intent_plus/android_intent.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../main.dart'; // Zugriff auf den globalen themeNotifier
 
 /// Einstellungsbildschirm der App.
-/// Erlaubt die Verwaltung des DIVERA Accesskeys, die Auswahl des Standard-Zeitfensters
-/// für den Hauptbildschirm sowie den Zugriff auf Android-Systemeinstellungen zum Energiemanagement.
-/// Beinhaltet zudem den versteckten Trigger für den Debug-Modus.
+/// Erlaubt die direkte Verwaltung von API-Key (mit eigenem Speicher-Button),
+/// sowie die sofortige Live-Übernahme von Dark Mode, Zeitfilter und Akku-Optionen.
 class SettingsScreen extends StatefulWidget {
   final bool isDebugMode;
   final Function(bool) onDebugModeChanged;
@@ -25,44 +25,48 @@ class _SettingsScreenState extends State<SettingsScreen> {
   // Controller für das API-Key Eingabefeld
   final TextEditingController _apiKeyController = TextEditingController();
   
-  // Zähler für den Easter-Egg-Trigger (10-mal Tippen für Debug-Modus)
+  // Zähler für das Easter-Egg (10-mal Tippen für den Debug-Modus)
   int _debugClickCount = 0;
   late bool _currentDebugState;
   
-  // Ausgewählter Zeitraum für die Hauptseite (Standard: 'week')
+  // Ausgewählter Zeitraum für die Hauptseite
   String _selectedTimeframe = 'week';
+  
+  // Zustand für den Dark Mode Schalter
+  bool _isDarkMode = false;
 
   @override
   void initState() {
     super.initState();
     _currentDebugState = widget.isDebugMode;
-    _loadSettings(); // Gespeicherte Einstellungen beim Öffnen laden
+    _loadSettings();
   }
 
-  /// Lädt den gespeicherten API-Schlüssel und den gewählten Zeitfilter aus SharedPreferences.
+  /// Lädt gespeicherte Einstellungen beim Öffnen des Screens aus den SharedPreferences.
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
       _apiKeyController.text = prefs.getString('divera_access_key') ?? '';
       _selectedTimeframe = prefs.getString('home_timeframe') ?? 'week';
+      _isDarkMode = prefs.getBool('is_dark_mode') ?? false;
     });
   }
 
-  /// Speichert den API-Key sowie den ausgewählten Zeitfilter dauerhaft auf dem Gerät.
-  Future<void> _saveSettings() async {
+  /// Speichert speziell den API-Key (wird über den separaten Button aufgerufen).
+  Future<void> _saveApiKey() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('divera_access_key', _apiKeyController.text.trim());
-    await prefs.setString('home_timeframe', _selectedTimeframe);
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Einstellungen gespeichert!')),
+        const SnackBar(content: Text('API-Key erfolgreich gespeichert!')),
       );
-      Navigator.pop(context, true); // Gibt 'true' an HomeScreen zurück, um Refresh auszulösen
+      // Signalisiert dem HomeScreen beim Verlassen, dass Daten neu geladen werden sollen
+      Navigator.pop(context, true);
     }
   }
 
-  /// Löscht den gespeicherten API-Schlüssel aus den SharedPreferences und leert das Textfeld.
+  /// Löscht den API-Key aus den SharedPreferences.
   Future<void> _clearApiKey() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('divera_access_key');
@@ -77,7 +81,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
-  /// Sendet einen nativen Android-Intent, um die Akku-Optimierungseinstellungen des Systems zu öffnen.
+  /// Öffnet die systeminternen Android-Akkueinstellungen via Intent.
   Future<void> _requestDisableBatteryOptimization() async {
     if (Platform.isAndroid) {
       const intent = AndroidIntent(
@@ -98,8 +102,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
-  /// Registriert Klicks auf den Copyright-Text.
-  /// Nach 10-maligem Tippen wird der Debug-Modus aktiviert und via Callback an das übergeordnete Widget gemeldet.
+  /// Versteckter Trigger für den Debug-Modus (10x auf den Footer tippen).
   void _handleCopyrightTap() {
     if (_currentDebugState) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -117,7 +120,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     int remaining = 10 - _debugClickCount;
 
-    // Countdown-Hinweise ab dem 5. Klick anzeigen
     if (remaining > 0 && remaining <= 5) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -126,7 +128,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
       );
     } else if (remaining <= 0) {
-      // Debug-Modus erfolgreich freigeschaltet
       setState(() {
         _currentDebugState = true;
       });
@@ -155,7 +156,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // --- Sektion: API-Konfiguration ---
+            // --- Sektion: API-Konfiguration & Key-Buttons direkt darunter ---
             const Text(
               'API-Konfiguration',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
@@ -174,64 +175,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 prefixIcon: Icon(Icons.key),
               ),
             ),
-            const SizedBox(height: 24),
-
-            // --- Sektion: Filter für Hauptseite ---
-            const Text(
-              'Anzeige auf der Hauptseite',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'Wähle, aus welchem Zeitraum die Einsätze standardmäßig auf der Hauptseite angezeigt werden sollen.',
-              style: TextStyle(color: Colors.grey),
-            ),
             const SizedBox(height: 12),
-            // Dropdown-Auswahl für den Zeitfilter
-            DropdownButtonFormField<String>(
-              value: _selectedTimeframe,
-              decoration: const InputDecoration(
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.calendar_view_week),
-              ),
-              items: const [
-                DropdownMenuItem(
-                  value: '24h',
-                  child: Text('Letzte 24 Stunden'),
-                ),
-                DropdownMenuItem(
-                  value: 'week',
-                  child: Text('Letzte Woche (7 Tage)'),
-                ),
-                DropdownMenuItem(
-                  value: 'month',
-                  child: Text('Letzter Monat (30 Tage)'),
-                ),
-                DropdownMenuItem(
-                  value: 'year',
-                  child: Text('Letztes Jahr (365 Tage)'),
-                ),
-                DropdownMenuItem(
-                  value: 'all',
-                  child: Text('Alle Einsätze'),
-                ),
-              ],
-              onChanged: (value) {
-                if (value != null) {
-                  setState(() => _selectedTimeframe = value);
-                }
-              },
-            ),
-            const SizedBox(height: 16),
 
-            // Aktions-Buttons: Speichern & Löschen
+            // Speichern- und Löschen-Buttons direkt unter dem API-Schlüssel
             Row(
               children: [
                 Expanded(
                   child: ElevatedButton.icon(
-                    onPressed: _saveSettings,
+                    onPressed: _saveApiKey,
                     icon: const Icon(Icons.save),
-                    label: const Text('Speichern'),
+                    label: const Text('Key speichern'),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.redAccent,
                       foregroundColor: Colors.white,
@@ -243,33 +196,154 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 OutlinedButton.icon(
                   onPressed: _clearApiKey,
                   icon: const Icon(Icons.delete, color: Colors.red),
-                  label: const Text('Löschen',
-                      style: TextStyle(color: Colors.red)),
+                  label: const Text('Löschen', style: TextStyle(color: Colors.red)),
                   style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(
-                        vertical: 14, horizontal: 16),
+                    padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
                   ),
                 ),
               ],
+            ),
+            const SizedBox(height: 28),
+            const Divider(),
+            const SizedBox(height: 12),
+
+            // --- Sektion: Darstellung & Design (Sofortige Live-Übernahme) ---
+            const Text(
+              'Darstellung',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            SwitchListTile(
+              title: const Text('Dunkler Modus (Dark Mode)'),
+              subtitle: const Text('Angenehm bei Einsätzen im Dunkeln'),
+              secondary: const Icon(Icons.dark_mode),
+              value: _isDarkMode,
+              onChanged: (value) async {
+                setState(() {
+                  _isDarkMode = value;
+                });
+                // Sofort global umschalten und in SharedPreferences speichern
+                themeNotifier.value = value ? ThemeMode.dark : ThemeMode.light;
+                final prefs = await SharedPreferences.getInstance();
+                await prefs.setBool('is_dark_mode', value);
+              },
+            ),
+            const SizedBox(height: 16),
+
+            // --- Sektion: Standard-Filter für die Hauptseite (Sofortige Live-Übernahme) ---
+            const Text(
+              'Anzeige auf der Hauptseite',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Wähle, aus welchem Zeitraum die Einsätze standardmäßig auf der Hauptseite angezeigt werden sollen.',
+              style: TextStyle(color: Colors.grey),
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              value: _selectedTimeframe,
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.calendar_view_week),
+              ),
+              items: const [
+                DropdownMenuItem(value: '24h', child: Text('Letzte 24 Stunden')),
+                DropdownMenuItem(value: 'week', child: Text('Letzte Woche (7 Tage)')),
+                DropdownMenuItem(value: 'month', child: Text('Letzter Monat (30 Tage)')),
+                DropdownMenuItem(value: 'year', child: Text('Letztes Jahr (365 Tage)')),
+                DropdownMenuItem(value: 'all', child: Text('Alle Einsätze')),
+              ],
+              onChanged: (value) async {
+                if (value != null) {
+                  setState(() => _selectedTimeframe = value);
+                  // Direkt beim Auswählen persistent abspeichern
+                  final prefs = await SharedPreferences.getInstance();
+                  await prefs.setString('home_timeframe', value);
+                }
+              },
             ),
 
             const SizedBox(height: 28),
             const Divider(),
             const SizedBox(height: 12),
 
-            // --- Sektion: Hintergrund-Synchronisation & Akku-Einstellungen ---
+            // --- Sektion: Status des letzten Datenbankabrufs ---
+            FutureBuilder<SharedPreferences>(
+              future: SharedPreferences.getInstance(),
+              builder: (context, snapshot) {
+                if (!snapshot.hasData) return const SizedBox.shrink();
+                final prefs = snapshot.data!;
+                final lastSyncStr = prefs.getString('last_sync_time');
+                final lastSuccess = prefs.getBool('last_sync_success') ?? false;
+
+                String formattedTime = 'Noch kein Abruf erfolgt';
+                if (lastSyncStr != null) {
+                  final dt = DateTime.parse(lastSyncStr).toLocal();
+                  formattedTime = '${dt.day}.${dt.month}.${dt.year} um ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')} Uhr';
+                }
+
+                return Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(12.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Letzter Datenbankabruf',
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Icon(
+                              lastSyncStr == null
+                                  ? Icons.help_outline
+                                  : (lastSuccess ? Icons.check_circle : Icons.error),
+                              color: lastSyncStr == null
+                                  ? Colors.grey
+                                  : (lastSuccess ? Colors.green : Colors.red),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('Zeitpunkt: $formattedTime', style: const TextStyle(fontSize: 13)),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    'Status: ${lastSyncStr == null ? "Keine Daten" : (lastSuccess ? "Erfolgreich" : "Fehlgeschlagen")}',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: lastSuccess ? Colors.green.shade700 : Colors.red.shade700,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 16),
+
+            // --- Sektion: Hintergrund-Synchronisation & Akku-Hinweise ---
             const Text(
               'Hintergrund-Synchronisation',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
             const Text(
-              'Die App ruft automatisch alle 3 Stunden neue Einsatzdaten ab. Damit Android die Aufgabe im Hintergrund nicht blockiert, sollte die Akku-Optimierung angepasst werden.',
+              'Die App ruft automatisch alle 3 Stunden neue Einsatzdaten ab.',
               style: TextStyle(color: Colors.grey),
             ),
             const SizedBox(height: 16),
 
-            // Plattformspezifische Hinweise (Android vs. iOS)
             if (Platform.isAndroid) ...[
               Card(
                 color: Colors.orange.shade50,
@@ -280,8 +354,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     children: [
                       Row(
                         children: [
-                          Icon(Icons.battery_saver,
-                              color: Colors.orange.shade800),
+                          Icon(Icons.battery_saver, color: Colors.orange.shade800),
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
@@ -297,7 +370,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       const SizedBox(height: 8),
                       const Text(
                         'Damit Android den 3-Stunden-Sync nicht stoppt, wähle in den Akku-Einstellungen für diese App "Unbeschränkt".',
-                        style: TextStyle(fontSize: 12),
+                        style: TextStyle(fontSize: 12, color: Colors.black87),
                       ),
                       const SizedBox(height: 12),
                       ElevatedButton.icon(
@@ -313,38 +386,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ),
               ),
-              const SizedBox(height: 8),
-              // Ausklappbare Zusatzhinweise für herstellerspezifische Energiesparmodi
-              const ExpansionTile(
-                title: Text(
-                  'Hinweis für Samsung, Xiaomi & Huawei',
-                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
-                ),
-                children: [
-                  Padding(
-                    padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
-                    child: Text(
-                      'Einige Hersteller nutzen eigene Energiesparmodi. Stelle sicher, dass unter:\n'
-                      '• Einstellungen -> Apps -> DIVERA Einsatzstatistik -> Akku\n'
-                      'die Option "Unbeschränkt" bzw. "Keine Einschränkungen" gewählt ist.',
-                      style: TextStyle(fontSize: 12, color: Colors.grey),
-                    ),
-                  ),
-                ],
-              ),
-            ] else if (Platform.isIOS) ...[
-              const Card(
-                child: Padding(
-                  padding: EdgeInsets.all(12.0),
-                  child: Text(
-                    'Unter iOS entscheidet das System automatisch anhand der Nutzungshäufigkeit über die Hintergrund-Aktualisierung.',
-                    style: TextStyle(fontSize: 12),
-                  ),
-                ),
-              ),
             ],
 
-            // Visueller Statusindikator bei aktivem Debug-Modus
+            // Debug-Anzeige, falls aktiv
             if (_currentDebugState) ...[
               const SizedBox(height: 24),
               Container(
@@ -370,16 +414,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
             const SizedBox(height: 40),
 
-            // --- Footer / App-Info mit versteckter Klick-Fläche ---
+            // --- Footer / App-Info mit verstecktem Debug-Trigger ---
             Center(
               child: GestureDetector(
-                onTap: _handleCopyrightTap, // Interaktives Element für Debug-Trigger
+                onTap: _handleCopyrightTap,
                 child: Padding(
                   padding: const EdgeInsets.all(12.0),
                   child: Column(
                     children: [
                       const Text(
-                        'DIVERA Einsatzstatistik v1.0.0',
+                        'Divera Stats v1.0.0',
                         style: TextStyle(
                             color: Colors.grey, fontWeight: FontWeight.bold),
                       ),

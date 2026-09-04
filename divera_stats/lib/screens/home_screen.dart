@@ -10,10 +10,11 @@ import '../services/divera_service.dart';
 import 'debug_db_screen.dart';
 import 'settings_screen.dart';
 import 'stats_screen.dart';
+import 'fire_game_dialog.dart'; // Import für das Feuerwehr-Minispiel (Easter Egg)
 
-/// Hauptbildschirm der Anwendung.
+/// Hauptbildschirm der Anwendung ("Divera Stats").
 /// Zeigt die Einsatzliste basierend auf dem gewählten Zeitfilter an,
-/// steuert die Manuelle/Automatische Synchronisation und bietet Zugriff auf Navigation & Debug-Features.
+/// steuert die Synchronisation und bietet Zugriff auf Navigation, Statistiken und das Easter Egg.
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -28,6 +29,9 @@ class _HomeScreenState extends State<HomeScreen> {
   String _savedApiKey = '';
   bool _isDebugMode = false;
   String _timeframe = 'week'; // Standard-Zeitfenster: Letzte Woche
+  
+  // Zähler für das Easter-Egg (3-maliges Tippen auf den Titel öffnet das Minispiel)
+  int _titleTapCount = 0;
 
   @override
   void initState() {
@@ -227,7 +231,22 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('DIVERA Einsatzstatistik'),
+        // Easter Egg: 3x antippen des Titels startet das Feuerwehr-Minispiel
+        title: GestureDetector(
+          onTap: () {
+            setState(() {
+              _titleTapCount++;
+            });
+            if (_titleTapCount >= 3) {
+              _titleTapCount = 0; // Zähler zurücksetzen
+              showDialog(
+                context: context,
+                builder: (context) => const FireGameDialog(),
+              );
+            }
+          },
+          child: const Text('Divera Stats'),
+        ),
         backgroundColor: Colors.redAccent,
         foregroundColor: Colors.white,
         actions: [
@@ -281,7 +300,9 @@ class _HomeScreenState extends State<HomeScreen> {
           // Oberer Info-Balken mit Angaben zum Filter und Ladeindikator
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            color: Colors.grey.shade200,
+            color: Theme.of(context).brightness == Brightness.dark
+                ? Colors.grey.shade900
+                : Colors.grey.shade200,
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -306,7 +327,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Text('Keine Alarme für zeitraum "$_timeframeLabel" vorhanden.'),
+                        Text('Keine Alarme für Zeitraum "$_timeframeLabel" vorhanden.'),
                         const SizedBox(height: 12),
                         ElevatedButton.icon(
                           onPressed: _openSettings,

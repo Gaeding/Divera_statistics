@@ -2,12 +2,11 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import '../models/alarm_model.dart';
 
-/// Enum zur vordefinierten zeitlichen Filterung der Einsatzdaten.
+/// Enum zur zeitlichen Filterung im Statistik-Bereich.
 enum DateFilter { all, currentYear, currentMonth, currentWeek, lastYear }
 
 /// Statistik-Bildschirm der App.
-/// Visualisiert die Alarmdaten mithilfe von `fl_chart` über Torten- und Säulendiagramme
-/// sowie dynamische Filtermöglichkeiten nach Zeitraum und Stichwort.
+/// Bietet interaktive Filter und visualisiert Einsätze über Torten-, Wochentags- und Monatsdiagramme.
 class StatsScreen extends StatefulWidget {
   final List<Alarm> alarms;
 
@@ -18,12 +17,10 @@ class StatsScreen extends StatefulWidget {
 }
 
 class _StatsScreenState extends State<StatsScreen> {
-  // Lokaler State für die aktiven Filteroptionen
   DateFilter _selectedDateFilter = DateFilter.all;
   String _selectedKeyword = 'Alle';
 
-  /// 1. Extrahiert alle eindeutigen Einsatzstichwörter (`title`) aus dem Datensatz
-  /// für das Stichwort-Dropdown-Menü.
+  /// Extrahiert alle eindeutigen Einsatz-Stichwörter für das Filter-Dropdown.
   List<String> _getAvailableKeywords() {
     Set<String> keywords = {'Alle'};
     for (var alarm in widget.alarms) {
@@ -34,13 +31,11 @@ class _StatsScreenState extends State<StatsScreen> {
     return keywords.toList();
   }
 
-  /// 2. Getter: Wendet sowohl den gewählten Zeitfilter als auch den Stichwortfilter
-  /// parallel auf die Einsatzliste an.
+  /// Filtert die Alarm-Liste dynamisch nach gewähltem Zeitraum und Stichwort.
   List<Alarm> get _filteredAlarms {
     final now = DateTime.now();
 
     return widget.alarms.where((alarm) {
-      // Datum-Filterlogik
       bool matchesDate = true;
       switch (_selectedDateFilter) {
         case DateFilter.currentYear:
@@ -51,7 +46,6 @@ class _StatsScreenState extends State<StatsScreen> {
               alarm.date.year == now.year && alarm.date.month == now.month;
           break;
         case DateFilter.currentWeek:
-          // Berechnung von Start (Montag) und Ende der aktuellen Kalenderwoche
           final startOfWeek = now.subtract(Duration(days: now.weekday - 1));
           final endOfWeek = startOfWeek.add(const Duration(days: 7));
           matchesDate = alarm.date.isAfter(
@@ -67,7 +61,6 @@ class _StatsScreenState extends State<StatsScreen> {
           break;
       }
 
-      // Stichwort-Filterlogik (case-insensitive Suche)
       bool matchesKeyword = true;
       if (_selectedKeyword != 'Alle') {
         matchesKeyword = alarm.title.toLowerCase().contains(_selectedKeyword.toLowerCase());
@@ -77,7 +70,7 @@ class _StatsScreenState extends State<StatsScreen> {
     }).toList();
   }
 
-  /// Hilfsmethode: Aggregiert die gefilterten Einsätze gruppiert nach Monat ("MM/YY").
+  /// Aggregiert Einsätze nach Monaten ("MM/YY").
   Map<String, int> _getMonthlyStats(List<Alarm> filtered) {
     Map<String, int> stats = {};
     for (var alarm in filtered) {
@@ -88,7 +81,31 @@ class _StatsScreenState extends State<StatsScreen> {
     return stats;
   }
 
-  /// Hilfsmethode: Zählt die Häufigkeit der jeweiligen Rückmeldung/Status-ID (`myStatusId`).
+  /// Aggregiert Einsätze nach Wochentagen (Montag bis Sonntag).
+  Map<String, int> _getWeekdayStats(List<Alarm> filtered) {
+    Map<String, int> stats = {
+      'Mo': 0,
+      'Di': 0,
+      'Mi': 0,
+      'Do': 0,
+      'Fr': 0,
+      'Sa': 0,
+      'So': 0,
+    };
+
+    const weekdayKeys = ['', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
+
+    for (var alarm in filtered) {
+      int wd = alarm.date.weekday; // 1 = Montag, 7 = Sonntag
+      if (wd >= 1 && wd <= 7) {
+        String key = weekdayKeys[wd];
+        stats[key] = (stats[key] ?? 0) + 1;
+      }
+    }
+    return stats;
+  }
+
+  /// Zählt die Verteilung der eigenen Rückmeldungen (`myStatusId`).
   Map<String, int> _getStatusStats(List<Alarm> filtered) {
     Map<String, int> stats = {
       '3 Min': 0,
@@ -126,10 +143,10 @@ class _StatsScreenState extends State<StatsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Daten für die UI-Berechnung aufbereiten
     final filteredList = _filteredAlarms;
     final statusStats = _getStatusStats(filteredList);
     final monthlyStats = _getMonthlyStats(filteredList);
+    final weekdayStats = _getWeekdayStats(filteredList);
     final availableKeywords = _getAvailableKeywords();
 
     return Scaffold(
@@ -140,13 +157,15 @@ class _StatsScreenState extends State<StatsScreen> {
       ),
       body: Column(
         children: [
-          // --- Sektion: Filter-Steuerung oben ---
+          // Filter-Bereich am oberen Bildschirmrand
           Container(
             padding: const EdgeInsets.all(12.0),
-            color: Colors.grey.shade100,
+            color: Theme.of(context).brightness == Brightness.dark
+                ? Colors.grey.shade900
+                : Colors.grey.shade100,
             child: Column(
               children: [
-                // Zeitraum Dropdown-Filter
+                // Zeitraum-Auswahl
                 Row(
                   children: [
                     const Icon(Icons.calendar_today, size: 20, color: Colors.grey),
@@ -159,16 +178,11 @@ class _StatsScreenState extends State<StatsScreen> {
                         isExpanded: true,
                         underline: Container(height: 1, color: Colors.grey),
                         items: const [
-                          DropdownMenuItem(
-                              value: DateFilter.all, child: Text('Alle Daten')),
-                          DropdownMenuItem(
-                              value: DateFilter.currentYear, child: Text('Dieses Jahr')),
-                          DropdownMenuItem(
-                              value: DateFilter.currentMonth, child: Text('Dieser Monat')),
-                          DropdownMenuItem(
-                              value: DateFilter.currentWeek, child: Text('Diese Woche')),
-                          DropdownMenuItem(
-                              value: DateFilter.lastYear, child: Text('Letztes Jahr')),
+                          DropdownMenuItem(value: DateFilter.all, child: Text('Alle Daten')),
+                          DropdownMenuItem(value: DateFilter.currentYear, child: Text('Dieses Jahr')),
+                          DropdownMenuItem(value: DateFilter.currentMonth, child: Text('Dieser Monat')),
+                          DropdownMenuItem(value: DateFilter.currentWeek, child: Text('Diese Woche')),
+                          DropdownMenuItem(value: DateFilter.lastYear, child: Text('Letztes Jahr')),
                         ],
                         onChanged: (value) {
                           if (value != null) {
@@ -180,8 +194,7 @@ class _StatsScreenState extends State<StatsScreen> {
                   ],
                 ),
                 const SizedBox(height: 8),
-
-                // Stichwort Dropdown-Filter
+                // Stichwort-Auswahl
                 Row(
                   children: [
                     const Icon(Icons.label, size: 20, color: Colors.grey),
@@ -213,8 +226,7 @@ class _StatsScreenState extends State<StatsScreen> {
               ],
             ),
           ),
-
-          // --- Sektion: Dashboard & Visualisierung ---
+          // Scrollbarer Statistik-Bereich
           Expanded(
             child: filteredList.isEmpty
                 ? const Center(
@@ -225,7 +237,7 @@ class _StatsScreenState extends State<StatsScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Kachel: Summe der aktuell gefilterten Einsätze
+                        // Kennzahl-Kachel: Summe der gefilterten Einsätze
                         Card(
                           color: Colors.redAccent.shade100,
                           child: Padding(
@@ -236,12 +248,12 @@ class _StatsScreenState extends State<StatsScreen> {
                                 const Text(
                                   'Gefilterte Einsätze',
                                   style: TextStyle(
-                                      fontSize: 16, fontWeight: FontWeight.bold),
+                                      fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black87),
                                 ),
                                 Text(
                                   '${filteredList.length}',
                                   style: const TextStyle(
-                                      fontSize: 24, fontWeight: FontWeight.bold),
+                                      fontSize: 24, fontWeight: FontWeight.bold, color: Colors.black87),
                                 ),
                               ],
                             ),
@@ -249,11 +261,10 @@ class _StatsScreenState extends State<StatsScreen> {
                         ),
                         const SizedBox(height: 20),
 
-                        // --- Tortendiagramm: Verteilung der Rückmeldungen ---
+                        // Tortendiagramm: Rückmeldungen
                         const Text(
                           'Verteilung deiner Rückmeldungen',
-                          style: TextStyle(
-                              fontSize: 16, fontWeight: FontWeight.bold),
+                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                         ),
                         const SizedBox(height: 12),
                         SizedBox(
@@ -262,7 +273,6 @@ class _StatsScreenState extends State<StatsScreen> {
                             PieChartData(
                               sectionsSpace: 2,
                               centerSpaceRadius: 35,
-                              // Rendert Tortenstücke nur, wenn der Wert > 0 ist
                               sections: [
                                 if ((statusStats['3 Min'] ?? 0) > 0)
                                   PieChartSectionData(
@@ -271,8 +281,7 @@ class _StatsScreenState extends State<StatsScreen> {
                                     title: '${statusStats['3 Min']}',
                                     radius: 45,
                                     titleStyle: const TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.bold),
+                                        color: Colors.white, fontWeight: FontWeight.bold),
                                   ),
                                 if ((statusStats['8 Min'] ?? 0) > 0)
                                   PieChartSectionData(
@@ -281,8 +290,7 @@ class _StatsScreenState extends State<StatsScreen> {
                                     title: '${statusStats['8 Min']}',
                                     radius: 45,
                                     titleStyle: const TextStyle(
-                                        color: Colors.black,
-                                        fontWeight: FontWeight.bold),
+                                        color: Colors.black, fontWeight: FontWeight.bold),
                                   ),
                                 if ((statusStats['>8 Min'] ?? 0) > 0)
                                   PieChartSectionData(
@@ -291,38 +299,32 @@ class _StatsScreenState extends State<StatsScreen> {
                                     title: '${statusStats['>8 Min']}',
                                     radius: 45,
                                     titleStyle: const TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.bold),
+                                        color: Colors.white, fontWeight: FontWeight.bold),
                                   ),
                                 if ((statusStats['Nicht einsatzbereit'] ?? 0) > 0)
                                   PieChartSectionData(
                                     color: Colors.red,
-                                    value: statusStats['Nicht einsatzbereit']!
-                                        .toDouble(),
+                                    value: statusStats['Nicht einsatzbereit']!.toDouble(),
                                     title: '${statusStats['Nicht einsatzbereit']}',
                                     radius: 45,
                                     titleStyle: const TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.bold),
+                                        color: Colors.white, fontWeight: FontWeight.bold),
                                   ),
                                 if ((statusStats['Außer Dienst'] ?? 0) > 0)
                                   PieChartSectionData(
                                     color: Colors.red.shade900,
-                                    value: statusStats['Außer Dienst']!
-                                        .toDouble(),
+                                    value: statusStats['Außer Dienst']!.toDouble(),
                                     title: '${statusStats['Außer Dienst']}',
                                     radius: 45,
                                     titleStyle: const TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.bold),
+                                        color: Colors.white, fontWeight: FontWeight.bold),
                                   ),
                               ],
                             ),
                           ),
                         ),
                         const SizedBox(height: 12),
-
-                        // Farblegende für das Tortendiagramm
+                        // Legende zum Tortendiagramm
                         Wrap(
                           spacing: 12,
                           runSpacing: 8,
@@ -336,12 +338,63 @@ class _StatsScreenState extends State<StatsScreen> {
                         ),
                         const SizedBox(height: 24),
 
-                        // --- Säulendiagramm: Einsätze pro Monat ---
+                        // Säulendiagramm: Einsätze nach Wochentagen
+                        const Text(
+                          'Einsätze nach Wochentagen',
+                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(height: 16),
+                        SizedBox(
+                          height: 200,
+                          child: BarChart(
+                            BarChartData(
+                              borderData: FlBorderData(show: false),
+                              titlesData: FlTitlesData(
+                                rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                                topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                                bottomTitles: AxisTitles(
+                                  sideTitles: SideTitles(
+                                    showTitles: true,
+                                    getTitlesWidget: (value, meta) {
+                                      List<String> keys = weekdayStats.keys.toList();
+                                      int index = value.toInt();
+                                      if (index >= 0 && index < keys.length) {
+                                        return Padding(
+                                          padding: const EdgeInsets.only(top: 6),
+                                          child: Text(
+                                            keys[index],
+                                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                                          ),
+                                        );
+                                      }
+                                      return const Text('');
+                                    },
+                                  ),
+                                ),
+                              ),
+                              barGroups: weekdayStats.entries.toList().asMap().entries.map((entry) {
+                                return BarChartGroupData(
+                                  x: entry.key,
+                                  barRods: [
+                                    BarChartRodData(
+                                      toY: entry.value.value.toDouble(),
+                                      color: Colors.orangeAccent,
+                                      width: 16,
+                                      borderRadius: BorderRadius.circular(4),
+                                    )
+                                  ],
+                                );
+                              }).toList(),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+
+                        // Säulendiagramm: Einsätze nach Monaten
                         if (monthlyStats.isNotEmpty) ...[
                           const Text(
                             'Einsätze nach Monaten',
-                            style: TextStyle(
-                                fontSize: 16, fontWeight: FontWeight.bold),
+                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                           ),
                           const SizedBox(height: 16),
                           SizedBox(
@@ -350,26 +403,20 @@ class _StatsScreenState extends State<StatsScreen> {
                               BarChartData(
                                 borderData: FlBorderData(show: false),
                                 titlesData: FlTitlesData(
-                                  rightTitles: const AxisTitles(
-                                      sideTitles: SideTitles(showTitles: false)),
-                                  topTitles: const AxisTitles(
-                                      sideTitles: SideTitles(showTitles: false)),
-                                  // X-Achsen Beschriftungen (Monat/Jahr)
+                                  rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                                  topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
                                   bottomTitles: AxisTitles(
                                     sideTitles: SideTitles(
                                       showTitles: true,
                                       getTitlesWidget: (value, meta) {
-                                        List<String> keys =
-                                            monthlyStats.keys.toList();
+                                        List<String> keys = monthlyStats.keys.toList();
                                         int index = value.toInt();
                                         if (index >= 0 && index < keys.length) {
                                           return Padding(
-                                            padding:
-                                                const EdgeInsets.only(top: 6),
+                                            padding: const EdgeInsets.only(top: 6),
                                             child: Text(
                                               keys[index],
-                                              style:
-                                                  const TextStyle(fontSize: 10),
+                                              style: const TextStyle(fontSize: 10),
                                             ),
                                           );
                                         }
@@ -378,12 +425,7 @@ class _StatsScreenState extends State<StatsScreen> {
                                     ),
                                   ),
                                 ),
-                                // Befüllen der Säulen-Datenpunkte
-                                barGroups: monthlyStats.entries
-                                    .toList()
-                                    .asMap()
-                                    .entries
-                                    .map((entry) {
+                                barGroups: monthlyStats.entries.toList().asMap().entries.map((entry) {
                                   return BarChartGroupData(
                                     x: entry.key,
                                     barRods: [
@@ -409,7 +451,7 @@ class _StatsScreenState extends State<StatsScreen> {
     );
   }
 
-  /// Hilfswidget zum Erstellen eines einzelnen Legenden-Eintrags mit Farbquadrat.
+  /// Hilfswidget zum Erstellen eines Legenden-Eintrags.
   Widget _buildLegendItem(String title, Color color) {
     return Row(
       mainAxisSize: MainAxisSize.min,

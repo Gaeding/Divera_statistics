@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:workmanager/workmanager.dart';
 import 'models/alarm_model.dart';
@@ -6,79 +7,102 @@ import 'screens/home_screen.dart';
 import 'services/database_helper.dart';
 import 'services/divera_service.dart';
 
-/// Eindeutiger Bezeichner für den Workmanager-Hintergrundtask.
+/// Eindeutiger Task-Name für den Hintergrunddienst.
 const String fetchDiveraTask = 'fetchDiveraAlarmsTask';
 
+/// Globaler Notifier zur Laufzeit-Umschaltung zwischen Light- und Dark-Modus.
+final ValueNotifier<ThemeMode> themeNotifier = ValueNotifier(ThemeMode.system);
+
 /// Einstiegspunkt für den Workmanager-Hintergrundprozess.
-/// Läuft isoliert im Hintergrund, um periodisch Einsatzdaten abzurufen.
-/// `@pragma('vm:entry-point')` verhindert, dass Tree-Shaking den Code im Release-Build entfernt.
+/// Läuft in einem separaten Isolate, um periodisch Einsatzdaten abzurufen.
 @pragma('vm:entry-point')
 void callbackDispatcher() {
   Workmanager().executeTask((task, inputData) async {
     if (task == fetchDiveraTask) {
       try {
-        // API-Schlüssel aus den lokalen SharedPreferences auslesen
         final prefs = await SharedPreferences.getInstance();
         final apiKey = prefs.getString('divera_access_key') ?? '';
 
-        // Synchronisation nur ausführen, wenn ein gültiger Key hinterlegt ist
         if (apiKey.isNotEmpty) {
           final diveraService = DiveraService(accessKey: apiKey);
           List<Alarm> newAlarms = await diveraService.fetchAlarms();
 
-          // Neue/aktualisierte Alarme direkt in die lokale SQLite-Datenbank schreiben
           if (newAlarms.isNotEmpty) {
             await DatabaseHelper.instance.insertAlarms(newAlarms);
           }
         }
-        return Future.value(true); // Signalisiert dem System den erfolgreichen Abschluss
+        return Future.value(true);
       } catch (e) {
-        return Future.value(false); // Signalisiert einen Fehler (Android versucht ggf. Retry)
+        return Future.value(false);
       }
     }
     return Future.value(true);
   });
 }
 
-/// Einstiegspunkt der Flutter-Anwendung.
+/// Haupt-Einstiegspunkt der Flutter-Anwendung.
 void main() async {
-  // Stellt sicher, dass die Flutter-Engine vor Asynchronen-Aufrufen (z. B. Workmanager) bereit ist
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Workmanager initialisieren und den Callback-Handler registrieren
+  // Blendet die Status- und Navigationsleiste vollständig aus (Immersive Mode)
+  SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+
+  runApp(const MyApp());
+
+  // Gespeicherte Theme-Präferenz beim App-Start auslesen
+  final prefs = await SharedPreferences.getInstance();
+  final isDarkMode = prefs.getBool('is_dark_mode') ?? false;
+  themeNotifier.value = isDarkMode ? ThemeMode.dark : ThemeMode.light;
+
+  // Workmanager initialisieren (Produktionsmodus: Debug-Bannner/Meldungen aus)
   await Workmanager().initialize(
     callbackDispatcher,
-    isInDebugMode: false, // Für Release-Builds auf 'false' setzen, um Test-Benachrichtigungen zu deaktivieren
+    isInDebugMode: false,
   );
 
-  // Periodischen Hintergrund-Task registrieren
+  // Periodischen Task für den Hintergrund-Sync (alle 3 Stunden) registrieren
   await Workmanager().registerPeriodicTask(
     'divera_3h_sync',
     fetchDiveraTask,
-    frequency: const Duration(hours: 3), // Im Produktivbetrieb auf 'Duration(hours: 3)' anpassen
+    frequency: const Duration(hours: 3),
     constraints: Constraints(
-      networkType: NetworkType.connected, // Task wird nur bei aktiver Internetverbindung ausgeführt
+      networkType: NetworkType.connected,
     ),
-    existingWorkPolicy: ExistingPeriodicWorkPolicy.keep, // Behält bestehende Aufgaben bei App-Neustart bei
+    existingWorkPolicy: ExistingPeriodicWorkPolicy.keep,
   );
 
   runApp(const MyApp());
 }
 
-/// Wurzel-Widget der Anwendung. Konfiguriert das globale Theme und die Startseite.
+/// Wurzel-Widget der App. Lauscht auf Theme-Änderungen und steuert das Design.
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'DIVERA Einsatzstatistik',
-      debugShowCheckedModeBanner: false, // Blendet das Debug-Banner oben rechts aus
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.redAccent),
-        useMaterial3: true,
-      ),
-      home: const HomeScreen(),
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: themeNotifier,
+      builder: (context, currentThemeMode, child) {
+        return MaterialApp(
+          title: 'DIVERA Einsatzstatistik',
+          debugShowCheckedModeBanner: false,
+          themeMode: currentThemeMode,
+          // Helles Design-Schema
+          theme: ThemeData(
+            colorScheme: ColorScheme.fromSeed(seedColor: Colors.redAccent),
+            useMaterial3: true,
+          ),
+          // Dunkles Design-Schema (Dark Mode)
+          darkTheme: ThemeData(
+            colorScheme: ColorScheme.fromSeed(
+              seedColor: Colors.redAccent,
+              brightness: Brightness.dark,
+            ),
+            useMaterial3: true,
+          ),
+          home: const HomeScreen(),
+        );
+      },
     );
   }
 }
