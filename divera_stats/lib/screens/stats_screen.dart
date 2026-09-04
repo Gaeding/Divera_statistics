@@ -2,8 +2,12 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import '../models/alarm_model.dart';
 
+/// Enum zur vordefinierten zeitlichen Filterung der Einsatzdaten.
 enum DateFilter { all, currentYear, currentMonth, currentWeek, lastYear }
 
+/// Statistik-Bildschirm der App.
+/// Visualisiert die Alarmdaten mithilfe von `fl_chart` über Torten- und Säulendiagramme
+/// sowie dynamische Filtermöglichkeiten nach Zeitraum und Stichwort.
 class StatsScreen extends StatefulWidget {
   final List<Alarm> alarms;
 
@@ -14,10 +18,12 @@ class StatsScreen extends StatefulWidget {
 }
 
 class _StatsScreenState extends State<StatsScreen> {
+  // Lokaler State für die aktiven Filteroptionen
   DateFilter _selectedDateFilter = DateFilter.all;
   String _selectedKeyword = 'Alle';
 
-  // 1. Liste aller im Datensatz vorkommenden Stichwörter ermitteln
+  /// 1. Extrahiert alle eindeutigen Einsatzstichwörter (`title`) aus dem Datensatz
+  /// für das Stichwort-Dropdown-Menü.
   List<String> _getAvailableKeywords() {
     Set<String> keywords = {'Alle'};
     for (var alarm in widget.alarms) {
@@ -28,12 +34,13 @@ class _StatsScreenState extends State<StatsScreen> {
     return keywords.toList();
   }
 
-  // 2. Gefilterte Alarme berechnen
+  /// 2. Getter: Wendet sowohl den gewählten Zeitfilter als auch den Stichwortfilter
+  /// parallel auf die Einsatzliste an.
   List<Alarm> get _filteredAlarms {
     final now = DateTime.now();
 
     return widget.alarms.where((alarm) {
-      // Datum-Filter
+      // Datum-Filterlogik
       bool matchesDate = true;
       switch (_selectedDateFilter) {
         case DateFilter.currentYear:
@@ -44,6 +51,7 @@ class _StatsScreenState extends State<StatsScreen> {
               alarm.date.year == now.year && alarm.date.month == now.month;
           break;
         case DateFilter.currentWeek:
+          // Berechnung von Start (Montag) und Ende der aktuellen Kalenderwoche
           final startOfWeek = now.subtract(Duration(days: now.weekday - 1));
           final endOfWeek = startOfWeek.add(const Duration(days: 7));
           matchesDate = alarm.date.isAfter(
@@ -59,7 +67,7 @@ class _StatsScreenState extends State<StatsScreen> {
           break;
       }
 
-      // Stichwort-Filter
+      // Stichwort-Filterlogik (case-insensitive Suche)
       bool matchesKeyword = true;
       if (_selectedKeyword != 'Alle') {
         matchesKeyword = alarm.title.toLowerCase().contains(_selectedKeyword.toLowerCase());
@@ -69,7 +77,7 @@ class _StatsScreenState extends State<StatsScreen> {
     }).toList();
   }
 
-  // Hilfsmethode: Einsätze pro Monat zählen
+  /// Hilfsmethode: Aggregiert die gefilterten Einsätze gruppiert nach Monat ("MM/YY").
   Map<String, int> _getMonthlyStats(List<Alarm> filtered) {
     Map<String, int> stats = {};
     for (var alarm in filtered) {
@@ -80,7 +88,7 @@ class _StatsScreenState extends State<StatsScreen> {
     return stats;
   }
 
-  // Hilfsmethode: Status-Verteilung zählen
+  /// Hilfsmethode: Zählt die Häufigkeit der jeweiligen Rückmeldung/Status-ID (`myStatusId`).
   Map<String, int> _getStatusStats(List<Alarm> filtered) {
     Map<String, int> stats = {
       '3 Min': 0,
@@ -118,6 +126,7 @@ class _StatsScreenState extends State<StatsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Daten für die UI-Berechnung aufbereiten
     final filteredList = _filteredAlarms;
     final statusStats = _getStatusStats(filteredList);
     final monthlyStats = _getMonthlyStats(filteredList);
@@ -131,13 +140,13 @@ class _StatsScreenState extends State<StatsScreen> {
       ),
       body: Column(
         children: [
-          // Filter-Bereich oben
+          // --- Sektion: Filter-Steuerung oben ---
           Container(
             padding: const EdgeInsets.all(12.0),
             color: Colors.grey.shade100,
             child: Column(
               children: [
-                // Filter: Zeitraum Dropdown
+                // Zeitraum Dropdown-Filter
                 Row(
                   children: [
                     const Icon(Icons.calendar_today, size: 20, color: Colors.grey),
@@ -172,7 +181,7 @@ class _StatsScreenState extends State<StatsScreen> {
                 ),
                 const SizedBox(height: 8),
 
-                // Filter: Stichwort Dropdown
+                // Stichwort Dropdown-Filter
                 Row(
                   children: [
                     const Icon(Icons.label, size: 20, color: Colors.grey),
@@ -205,7 +214,7 @@ class _StatsScreenState extends State<StatsScreen> {
             ),
           ),
 
-          // Inhalt mit Statistiken
+          // --- Sektion: Dashboard & Visualisierung ---
           Expanded(
             child: filteredList.isEmpty
                 ? const Center(
@@ -216,7 +225,7 @@ class _StatsScreenState extends State<StatsScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Kachel: Anzahl Einsätze
+                        // Kachel: Summe der aktuell gefilterten Einsätze
                         Card(
                           color: Colors.redAccent.shade100,
                           child: Padding(
@@ -240,7 +249,7 @@ class _StatsScreenState extends State<StatsScreen> {
                         ),
                         const SizedBox(height: 20),
 
-                        // Tortendiagramm: Rückmeldungen
+                        // --- Tortendiagramm: Verteilung der Rückmeldungen ---
                         const Text(
                           'Verteilung deiner Rückmeldungen',
                           style: TextStyle(
@@ -253,6 +262,7 @@ class _StatsScreenState extends State<StatsScreen> {
                             PieChartData(
                               sectionsSpace: 2,
                               centerSpaceRadius: 35,
+                              // Rendert Tortenstücke nur, wenn der Wert > 0 ist
                               sections: [
                                 if ((statusStats['3 Min'] ?? 0) > 0)
                                   PieChartSectionData(
@@ -312,7 +322,7 @@ class _StatsScreenState extends State<StatsScreen> {
                         ),
                         const SizedBox(height: 12),
 
-                        // Legende
+                        // Farblegende für das Tortendiagramm
                         Wrap(
                           spacing: 12,
                           runSpacing: 8,
@@ -326,7 +336,7 @@ class _StatsScreenState extends State<StatsScreen> {
                         ),
                         const SizedBox(height: 24),
 
-                        // Säulendiagramm: Einsätze nach Monaten
+                        // --- Säulendiagramm: Einsätze pro Monat ---
                         if (monthlyStats.isNotEmpty) ...[
                           const Text(
                             'Einsätze nach Monaten',
@@ -344,6 +354,7 @@ class _StatsScreenState extends State<StatsScreen> {
                                       sideTitles: SideTitles(showTitles: false)),
                                   topTitles: const AxisTitles(
                                       sideTitles: SideTitles(showTitles: false)),
+                                  // X-Achsen Beschriftungen (Monat/Jahr)
                                   bottomTitles: AxisTitles(
                                     sideTitles: SideTitles(
                                       showTitles: true,
@@ -367,6 +378,7 @@ class _StatsScreenState extends State<StatsScreen> {
                                     ),
                                   ),
                                 ),
+                                // Befüllen der Säulen-Datenpunkte
                                 barGroups: monthlyStats.entries
                                     .toList()
                                     .asMap()
@@ -397,6 +409,7 @@ class _StatsScreenState extends State<StatsScreen> {
     );
   }
 
+  /// Hilfswidget zum Erstellen eines einzelnen Legenden-Eintrags mit Farbquadrat.
   Widget _buildLegendItem(String title, Color color) {
     return Row(
       mainAxisSize: MainAxisSize.min,

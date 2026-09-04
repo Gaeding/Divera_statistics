@@ -3,6 +3,10 @@ import 'package:android_intent_plus/android_intent.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+/// Einstellungsbildschirm der App.
+/// Erlaubt die Verwaltung des DIVERA Accesskeys, die Auswahl des Standard-Zeitfensters
+/// für den Hauptbildschirm sowie den Zugriff auf Android-Systemeinstellungen zum Energiemanagement.
+/// Beinhaltet zudem den versteckten Trigger für den Debug-Modus.
 class SettingsScreen extends StatefulWidget {
   final bool isDebugMode;
   final Function(bool) onDebugModeChanged;
@@ -18,18 +22,24 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
+  // Controller für das API-Key Eingabefeld
   final TextEditingController _apiKeyController = TextEditingController();
+  
+  // Zähler für den Easter-Egg-Trigger (10-mal Tippen für Debug-Modus)
   int _debugClickCount = 0;
   late bool _currentDebugState;
-  String _selectedTimeframe = 'week'; // Standard: Letzte Woche
+  
+  // Ausgewählter Zeitraum für die Hauptseite (Standard: 'week')
+  String _selectedTimeframe = 'week';
 
   @override
   void initState() {
     super.initState();
     _currentDebugState = widget.isDebugMode;
-    _loadSettings();
+    _loadSettings(); // Gespeicherte Einstellungen beim Öffnen laden
   }
 
+  /// Lädt den gespeicherten API-Schlüssel und den gewählten Zeitfilter aus SharedPreferences.
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
@@ -38,6 +48,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     });
   }
 
+  /// Speichert den API-Key sowie den ausgewählten Zeitfilter dauerhaft auf dem Gerät.
   Future<void> _saveSettings() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('divera_access_key', _apiKeyController.text.trim());
@@ -47,10 +58,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Einstellungen gespeichert!')),
       );
-      Navigator.pop(context, true);
+      Navigator.pop(context, true); // Gibt 'true' an HomeScreen zurück, um Refresh auszulösen
     }
   }
 
+  /// Löscht den gespeicherten API-Schlüssel aus den SharedPreferences und leert das Textfeld.
   Future<void> _clearApiKey() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('divera_access_key');
@@ -65,6 +77,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  /// Sendet einen nativen Android-Intent, um die Akku-Optimierungseinstellungen des Systems zu öffnen.
   Future<void> _requestDisableBatteryOptimization() async {
     if (Platform.isAndroid) {
       const intent = AndroidIntent(
@@ -85,6 +98,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  /// Registriert Klicks auf den Copyright-Text.
+  /// Nach 10-maligem Tippen wird der Debug-Modus aktiviert und via Callback an das übergeordnete Widget gemeldet.
   void _handleCopyrightTap() {
     if (_currentDebugState) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -102,6 +117,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     int remaining = 10 - _debugClickCount;
 
+    // Countdown-Hinweise ab dem 5. Klick anzeigen
     if (remaining > 0 && remaining <= 5) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -110,6 +126,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
       );
     } else if (remaining <= 0) {
+      // Debug-Modus erfolgreich freigeschaltet
       setState(() {
         _currentDebugState = true;
       });
@@ -138,7 +155,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // API-Konfiguration
+            // --- Sektion: API-Konfiguration ---
             const Text(
               'API-Konfiguration',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
@@ -159,7 +176,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             const SizedBox(height: 24),
 
-            // Filter für Hauptseite
+            // --- Sektion: Filter für Hauptseite ---
             const Text(
               'Anzeige auf der Hauptseite',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
@@ -170,6 +187,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               style: TextStyle(color: Colors.grey),
             ),
             const SizedBox(height: 12),
+            // Dropdown-Auswahl für den Zeitfilter
             DropdownButtonFormField<String>(
               value: _selectedTimeframe,
               decoration: const InputDecoration(
@@ -206,6 +224,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             const SizedBox(height: 16),
 
+            // Aktions-Buttons: Speichern & Löschen
             Row(
               children: [
                 Expanded(
@@ -238,7 +257,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             const Divider(),
             const SizedBox(height: 12),
 
-            // Hintergrund-Synchronisation
+            // --- Sektion: Hintergrund-Synchronisation & Akku-Einstellungen ---
             const Text(
               'Hintergrund-Synchronisation',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
@@ -250,6 +269,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             const SizedBox(height: 16),
 
+            // Plattformspezifische Hinweise (Android vs. iOS)
             if (Platform.isAndroid) ...[
               Card(
                 color: Colors.orange.shade50,
@@ -294,6 +314,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ),
               const SizedBox(height: 8),
+              // Ausklappbare Zusatzhinweise für herstellerspezifische Energiesparmodi
               const ExpansionTile(
                 title: Text(
                   'Hinweis für Samsung, Xiaomi & Huawei',
@@ -323,6 +344,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ],
 
+            // Visueller Statusindikator bei aktivem Debug-Modus
             if (_currentDebugState) ...[
               const SizedBox(height: 24),
               Container(
@@ -348,9 +370,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
             const SizedBox(height: 40),
 
+            // --- Footer / App-Info mit versteckter Klick-Fläche ---
             Center(
               child: GestureDetector(
-                onTap: _handleCopyrightTap,
+                onTap: _handleCopyrightTap, // Interaktives Element für Debug-Trigger
                 child: Padding(
                   padding: const EdgeInsets.all(12.0),
                   child: Column(

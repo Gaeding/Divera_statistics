@@ -11,6 +11,9 @@ import 'debug_db_screen.dart';
 import 'settings_screen.dart';
 import 'stats_screen.dart';
 
+/// Hauptbildschirm der Anwendung.
+/// Zeigt die Einsatzliste basierend auf dem gewählten Zeitfilter an,
+/// steuert die Manuelle/Automatische Synchronisation und bietet Zugriff auf Navigation & Debug-Features.
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -19,18 +22,20 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  // Lokaler State für Alarme, Ladeanzeige und Benutzereinstellungen
   List<Alarm> _allAlarms = [];
   bool _isLoading = false;
   String _savedApiKey = '';
   bool _isDebugMode = false;
-  String _timeframe = 'week';
+  String _timeframe = 'week'; // Standard-Zeitfenster: Letzte Woche
 
   @override
   void initState() {
     super.initState();
-    _loadLocalAlarmsAndSync();
+    _loadLocalAlarmsAndSync(); // Beim Initialisieren lokale Daten laden & bei Key-Existenz syncen
   }
 
+  /// Lädt die gespeicherten Einsätze aus SQLite sowie Schlüssel & Zeitfilter aus SharedPreferences.
   Future<void> _loadLocalAlarmsAndSync() async {
     final alarms = await DatabaseHelper.instance.getAllAlarms();
     final prefs = await SharedPreferences.getInstance();
@@ -43,12 +48,13 @@ class _HomeScreenState extends State<HomeScreen> {
       _timeframe = timeframe;
     });
 
+    // Automatische Initial-Synchronisation starten, falls ein API-Schlüssel hinterlegt ist
     if (_savedApiKey.isNotEmpty) {
       _syncWithDivera();
     }
   }
 
-  // Gefilterte Alarme basierend auf der Einstellung
+  /// Getter: Filtert die gesamte Alarmliste dynamisch basierend auf dem eingestellten Zeitraum (`_timeframe`).
   List<Alarm> get _filteredAlarms {
     final now = DateTime.now();
 
@@ -64,11 +70,12 @@ class _HomeScreenState extends State<HomeScreen> {
           return alarm.date.isAfter(now.subtract(const Duration(days: 365)));
         case 'all':
         default:
-          return true;
+          return true; // Zeigt alle lokal gespeicherten Einsätze an
       }
     }).toList();
   }
 
+  /// Getter: Liefert den menschenlesbaren Text für den Info-Balken oben im UI.
   String get _timeframeLabel {
     switch (_timeframe) {
       case '24h':
@@ -85,7 +92,9 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  /// Manuelle/Programmatische Synchronisation mit der DIVERA 24/7 API.
   Future<void> _syncWithDivera() async {
+    // Abbruch, falls kein API-Key konfiguriert wurde
     if (_savedApiKey.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -100,11 +109,13 @@ class _HomeScreenState extends State<HomeScreen> {
     });
 
     try {
+      // API-Anfrage durchführen & neue Daten in SQLite erfassen/aktualisieren
       final diveraService = DiveraService(accessKey: _savedApiKey);
       final newAlarms = await diveraService.fetchAlarms();
 
       await DatabaseHelper.instance.insertAlarms(newAlarms);
 
+      // Aktualisierte Liste aus der lokalen Datenbank ziehen
       final updatedAlarms = await DatabaseHelper.instance.getAllAlarms();
       setState(() {
         _allAlarms = updatedAlarms;
@@ -130,6 +141,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  /// Navigiert zum Einstellungs-Screen und aktualisiert den UI-State nach Rückkehr.
   Future<void> _openSettings() async {
     final result = await Navigator.push(
       context,
@@ -145,11 +157,14 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
 
+    // Falls Einstellungen geändert wurden (Rückgabewert true), Daten neu laden
     if (result == true) {
       _loadLocalAlarmsAndSync();
     }
   }
 
+  /// Debug-Feature: Liest die lokal gespeicherte JSON-Antwort der letzten API-Anfrage aus
+  /// und zeigt sie in einem dialogbasierten Textfeld inkl. Kopierfunktion an.
   Future<void> _showRawJsonDialog() async {
     try {
       final directory = await getApplicationDocumentsDirectory();
@@ -208,7 +223,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final dateFormat = DateFormat('dd.MM.yyyy HH:mm');
-    final displayedAlarms = _filteredAlarms;
+    final displayedAlarms = _filteredAlarms; // Gefilterte Liste für die Anzeige
 
     return Scaffold(
       appBar: AppBar(
@@ -216,6 +231,7 @@ class _HomeScreenState extends State<HomeScreen> {
         backgroundColor: Colors.redAccent,
         foregroundColor: Colors.white,
         actions: [
+          // Exklusive Icons für den aktiven Debug-Modus
           if (_isDebugMode) ...[
             IconButton(
               icon: const Icon(Icons.storage),
@@ -235,6 +251,7 @@ class _HomeScreenState extends State<HomeScreen> {
               onPressed: _showRawJsonDialog,
             ),
           ],
+          // Allgemeine App-Aktionen
           IconButton(
             icon: const Icon(Icons.bar_chart),
             tooltip: 'Statistik',
@@ -261,7 +278,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       body: Column(
         children: [
-          // Info-Bar oben
+          // Oberer Info-Balken mit Angaben zum Filter und Ladeindikator
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             color: Colors.grey.shade200,
@@ -282,7 +299,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
 
-          // Einsatzliste
+          // Einsatzliste oder Leermeldung
           Expanded(
             child: displayedAlarms.isEmpty
                 ? Center(
@@ -300,7 +317,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   )
                 : RefreshIndicator(
-                    onRefresh: _syncWithDivera,
+                    onRefresh: _syncWithDivera, // Pull-to-Refresh Unterstützung
                     child: ListView.builder(
                       itemCount: displayedAlarms.length,
                       itemBuilder: (context, index) {
@@ -312,10 +329,12 @@ class _HomeScreenState extends State<HomeScreen> {
                               horizontal: 12, vertical: 4),
                           clipBehavior: Clip.antiAlias,
                           child: ExpansionTile(
+                            // Icon-Badge mit Farbe des eigenen Status
                             leading: CircleAvatar(
                               backgroundColor: statusInfo.color,
                               child: const Icon(Icons.warning, color: Colors.white),
                             ),
+                            // Alarm-Titel und kompakter Status-Chip
                             title: Row(
                               children: [
                                 Expanded(
@@ -346,11 +365,13 @@ class _HomeScreenState extends State<HomeScreen> {
                                 ),
                               ],
                             ),
+                            // Ausrückedatum formatiert
                             subtitle: Text(
                               dateFormat.format(alarm.date),
                               style: TextStyle(
                                   color: Colors.grey.shade600, fontSize: 12),
                             ),
+                            // Ausklappbare Detailansicht für Adresse (nur Debug) & Einsatztext
                             children: [
                               Padding(
                                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
@@ -359,6 +380,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                   children: [
                                     const Divider(),
 
+                                    // Sensible Adressdaten werden strikt nur im Debug-Modus eingeblendet
                                     if (_isDebugMode && alarm.address.isNotEmpty) ...[
                                       Row(
                                         children: [
@@ -379,6 +401,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                       const SizedBox(height: 8),
                                     ],
 
+                                    // Sachverhalt/Einsatztext
                                     if (alarm.text.isNotEmpty) ...[
                                       Text(
                                         alarm.text,
