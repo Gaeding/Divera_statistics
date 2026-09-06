@@ -2,12 +2,12 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
-import 'package:shared_preferences/shared_preferences.dart'; // Benötigt für das Speichern des Sync-Status
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/alarm_model.dart';
 
 /// Service-Klasse zur Kommunikation mit der DIVERA 24/7 REST-API.
 /// Handhabt den HTTP-Abruf, das Caching von Rohdaten, das Parsing von Alarmen
-/// sowie die Protokollierung des letzten Abruf-Status (Zeitpunkt & Erfolg).
+/// sowie die Protokollierung des letzten Abruf-Status und einer Historie (App-Aktivitäten).
 class DiveraService {
   final String accessKey;
 
@@ -22,20 +22,35 @@ class DiveraService {
     return file.path;
   }
 
-  /// Hilfsmethode: Protokolliert den Zeitpunkt und den Erfolg des letzten Abrufs
-  /// in den lokalen SharedPreferences (gilt sowohl für Foreground als auch Background-Sync).
-  Future<void> _updateSyncLog(bool success) async {
+  /// Hilfsmethode: Protokolliert den Zeitpunkt, den Erfolg und die Quelle des Abrufs
+  /// sowohl in den SharedPreferences (für den UI-Status) als auch in einer dauerhaften Log-Datei.
+  Future<void> _updateSyncLog(bool success, String source) async {
     final prefs = await SharedPreferences.getInstance();
-    // Aktuellen ISO-Zeitstempel speichern
-    await prefs.setString('last_sync_time', DateTime.now().toIso8601String());
-    // Erfolgsstatus (true/false) speichern
+    final timestamp = DateTime.now().toIso8601String();
+
+    // UI-Status aktualisieren
+    await prefs.setString('last_sync_time', timestamp);
     await prefs.setBool('last_sync_success', success);
+    await prefs.setString('last_sync_source', source);
+
+    // Detaillierten Log-Eintrag in die Protokolldatei schreiben
+    try {
+      final directory = await getApplicationDocumentsDirectory();
+      final logFile = File('${directory.path}/app_activity.log');
+      
+      final statusText = success ? 'ERFOLGREICH' : 'FEHLGESCHLAGEN';
+      final logEntry = '[$timestamp] [$source] Datenabruf $statusText\n';
+
+      // Zeile an die bestehende Log-Datei anhängen
+      await logFile.writeAsString(logEntry, mode: FileMode.append);
+    } catch (_) {
+      // Fehler beim Schreiben des Logs ignorieren, um den Hauptfluss nicht zu stören
+    }
   }
 
   /// Ruft alle Alarme vom DIVERA 24/7 Server ab.
-  /// Gibt eine nach Datum absteigend sortierte Liste von `Alarm`-Objekten zurück.
-  Future<List<Alarm>> fetchAlarms() async {
-    // API-Endpoint URL mit personalisiertem Accesskey zusammenbauen
+  /// [source] beschreibt, ob der Abruf aus dem Vordergrund oder Hintergrund getriggert wurde.
+  Future<List<Alarm>> fetchAlarms({String source = 'Vordergrund'}) async {
     final url = Uri.parse(
       'https://www.divera247.com/api/v2/pull/all?accesskey=$accessKey',
     );
@@ -43,7 +58,6 @@ class DiveraService {
     try {
       final response = await http.get(url);
 
-      // HTTP-Status 200 bedeutet erfolgreiche Verbindung und Datenübertragung
       if (response.statusCode == 200) {
         // Rohdaten-JSON für Debug-Zwecke sichern
         await _saveRawJson(response.body);
@@ -51,7 +65,6 @@ class DiveraService {
         final dynamic decodedData = jsonDecode(response.body);
         List<Alarm> alarms = [];
 
-        // Gezielter Zugriff auf den verschachtelten DIVERA-Datenpfad: data -> alarm -> items
         final itemsMap = decodedData['data']?['alarm']?['items'];
 
         if (itemsMap is Map<String, dynamic>) {
@@ -62,21 +75,21 @@ class DiveraService {
           });
         }
 
-        // Alarme chronologisch absteigend sortieren (neueste Einsätze zuerst)
+        // Alarme chronologisch absteigend sortieren
         alarms.sort((a, b) => b.date.compareTo(a.date));
 
-        // Sync-Protokoll auf Erfolg (true) aktualisieren
-        await _updateSyncLog(true);
+        // Protokollieren: Erfolg + Quelle
+        await _updateSyncLog(true, source);
 
         return alarms;
       } else {
-        // Bei HTTP-Fehler (z. B. 401 Unauthorized oder 500 Server Error) Protokoll auf Fehler (false) setzen
-        await _updateSyncLog(false);
+        // Protokollieren: Fehler + Quelle
+        await _updateSyncLog(false, source);
         throw Exception('HTTP ${response.statusCode}');
       }
     } catch (e) {
-      // Bei Netzwerkfehlern oder Exceptions ebenfalls Protokoll auf Fehler (false) setzen
-      await _updateSyncLog(false);
+      // Protokollieren: Exception + Quelle
+      await _updateSyncLog(false, source);
       throw Exception('Fehler beim Auslesen: $e');
     }
   }

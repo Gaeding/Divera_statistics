@@ -25,7 +25,7 @@ void callbackDispatcher() {
 
         if (apiKey.isNotEmpty) {
           final diveraService = DiveraService(accessKey: apiKey);
-          List<Alarm> newAlarms = await diveraService.fetchAlarms();
+          List<Alarm> newAlarms = await diveraService.fetchAlarms(source: 'Hintergrund (Workmanager)');
 
           if (newAlarms.isNotEmpty) {
             await DatabaseHelper.instance.insertAlarms(newAlarms);

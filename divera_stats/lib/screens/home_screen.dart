@@ -115,7 +115,7 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       // API-Anfrage durchführen & neue Daten in SQLite erfassen/aktualisieren
       final diveraService = DiveraService(accessKey: _savedApiKey);
-      final newAlarms = await diveraService.fetchAlarms();
+      final newAlarms = await diveraService.fetchAlarms(source: 'Vordergrund (App-Start/Manuell)');
 
       await DatabaseHelper.instance.insertAlarms(newAlarms);
 
@@ -224,6 +224,91 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  /// Debug-Feature: Liest die app_activity.log aus, filtert auf die letzten 72 Stunden
+  /// und zeigt sie in einem Dialog an.
+  Future<void> _showActivityLogDialog() async {
+    try {
+      final directory = await getApplicationDocumentsDirectory();
+      final logFile = File('${directory.path}/app_activity.log');
+
+      if (!await logFile.exists()) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Noch keine Log-Einträge vorhanden.')),
+          );
+        }
+        return;
+      }
+
+      final lines = await logFile.readAsLines();
+      final cutoffTime = DateTime.now().subtract(const Duration(hours: 72));
+      List<String> filteredLines = [];
+
+      for (var line in lines) {
+        try {
+          if (line.startsWith('[')) {
+            final closingBracketIndex = line.indexOf(']');
+            if (closingBracketIndex != -1) {
+              final timestampStr = line.substring(1, closingBracketIndex);
+              final logTime = DateTime.parse(timestampStr);
+
+              // Nur Logs der letzten 72 Stunden behalten
+              if (logTime.isAfter(cutoffTime)) {
+                filteredLines.add(line);
+              }
+            }
+          }
+        } catch (_) {
+          // Beschädigte Zeilen überspringen
+        }
+      }
+
+      final logContent = filteredLines.isNotEmpty
+          ? filteredLines.join('\n')
+          : 'Keine Aktionen in den letzten 72 Stunden aufgezeichnet.';
+
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Debug: App Aktivitäten (72h)'),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: SingleChildScrollView(
+                child: SelectableText(
+                  logContent,
+                  style: const TextStyle(fontSize: 11, fontFamily: 'monospace'),
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Clipboard.setData(ClipboardData(text: logContent));
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Logs in Zwischenablage kopiert!')),
+                  );
+                },
+                child: const Text('Kopieren'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Schließen'),
+              ),
+            ],
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Fehler beim Lesen der Logs: $e')),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final dateFormat = DateFormat('dd.MM.yyyy HH:mm');
@@ -268,6 +353,12 @@ class _HomeScreenState extends State<HomeScreen> {
               icon: const Icon(Icons.code),
               tooltip: 'Debug: Raw JSON',
               onPressed: _showRawJsonDialog,
+            ),
+            // --- NEU: Log-Datei Button ---
+            IconButton(
+              icon: const Icon(Icons.history_edu), // Icon für Protokolle
+              tooltip: 'Debug: Aktivitäts-Log',
+              onPressed: _showActivityLogDialog,
             ),
           ],
           // Allgemeine App-Aktionen
