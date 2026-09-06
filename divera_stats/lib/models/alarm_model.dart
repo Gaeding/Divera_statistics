@@ -59,6 +59,18 @@ class Alarm {
     };
   }
 
+  /// Wandelt das Objekt in ein Map-Format um, um es für den Backup-Export als JSON zu nutzen.
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'title': title,
+      'text': text,
+      'date': date.millisecondsSinceEpoch,
+      'address': address,
+      'ucr_self_status_id': myStatusId, // Entspricht dem DIVERA-Feldnamen beim Parsen
+    };
+  }
+
   /// Erstellt ein `Alarm`-Objekt aus einem aus der SQLite-Datenbank gelesenen Eintrag.
   factory Alarm.fromMap(Map<String, dynamic> map) {
     return Alarm(

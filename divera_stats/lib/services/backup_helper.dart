@@ -10,17 +10,17 @@ import 'database_helper.dart';
 class BackupHelper {
 
   /// Exportiert alle Alarme als JSON-Datei, entfernt dabei jedoch die Adressen.
-  /// Nutzt `share_plus`, um die Datei zu teilen.
   static Future<bool> exportDataWithoutAddresses() async {
     try {
       // 1. Alle lokalen Alarme aus der Datenbank holen
       final List<Alarm> alarms = await DatabaseHelper.instance.getAllAlarms();
 
-      // 2. Daten konvertieren und das Adressfeld explizit leeren/entfernen
-      final List<Map<String, dynamic>> sanitizedData = alarms.map((alarm) {
-        final json = alarm.toJson();
-        json['address'] = ''; // Adresse für den Datenschutz entfernen
-        return json;
+      // 2. Daten konvertieren und das Adressfeld explizit leeren
+      // <Map<String, dynamic>> erzwingt den korrekten Rückgabetyp für die Liste
+      final List<Map<String, dynamic>> sanitizedData = alarms.map<Map<String, dynamic>>((alarm) {
+        final jsonMap = alarm.toJson();
+        jsonMap['address'] = ''; // Sensible Adresse für den Datenschutz entfernen
+        return jsonMap;
       }).toList();
 
       final jsonString = jsonEncode(sanitizedData);
@@ -46,7 +46,6 @@ class BackupHelper {
   /// Importiert eine zuvor exportierte JSON-Backup-Datei und speichert sie in SQLite.
   static Future<int> importData() async {
     try {
-      // Dateiauswahl öffnen (unterstützt JSON-Dateien)
       FilePickerResult? result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
         allowedExtensions: ['json'],
@@ -61,19 +60,17 @@ class BackupHelper {
 
         for (var item in decodedList) {
           if (item is Map<String, dynamic>) {
-            // Falls beim Import eine alte Adresse drin sein sollte, zur Sicherheit leeren
-            item['address'] = ''; 
+            item['address'] = ''; // Sicherheitshalber auch beim Import leer halten
             importedAlarms.add(Alarm.fromJson(item));
           }
         }
 
-        // In die lokale Datenbank einfügen (bestehende IDs werden überschrieben/ergänzt)
         await DatabaseHelper.instance.insertAlarms(importedAlarms);
         return importedAlarms.length;
       }
       return 0;
     } catch (e) {
-      return -1; // Fehler beim Import
+      return -1;
     }
   }
 }
