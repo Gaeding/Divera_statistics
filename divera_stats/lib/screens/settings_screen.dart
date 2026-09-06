@@ -3,10 +3,11 @@ import 'package:android_intent_plus/android_intent.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../main.dart'; // Zugriff auf den globalen themeNotifier
+import '../services/backup_helper.dart'; // Import für den Backup- und Datenschutz-Export
 
 /// Einstellungsbildschirm der App.
 /// Erlaubt die direkte Verwaltung von API-Key (mit eigenem Speicher-Button),
-/// sowie die sofortige Live-Übernahme von Dark Mode, Zeitfilter und Akku-Optionen.
+/// sowie die sofortige Live-Übernahme von Dark Mode, Zeitfilter, Backup-Funktionen und Akku-Optionen.
 class SettingsScreen extends StatefulWidget {
   final bool isDebugMode;
   final Function(bool) onDebugModeChanged;
@@ -262,6 +263,77 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   await prefs.setString('home_timeframe', value);
                 }
               },
+            ),
+
+            const SizedBox(height: 28),
+            const Divider(),
+            const SizedBox(height: 12),
+
+            // --- NEU: Sektion: Daten & Backup (Exklusive Adressen) ---
+            const Text(
+              'Daten & Backup',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Exportiere deine Statistiken als Backup (exklusive sensibler Adressdaten) oder spiele ein Backup auf einem anderen Gerät ein.',
+              style: TextStyle(color: Colors.grey),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () async {
+                      bool success = await BackupHelper.exportDataWithoutAddresses();
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(success
+                                ? 'Backup erfolgreich erstellt & geteilt!'
+                                : 'Fehler beim Exportieren.'),
+                          ),
+                        );
+                      }
+                    },
+                    icon: const Icon(Icons.upload),
+                    label: const Text('Exportieren'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blueGrey,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () async {
+                      int count = await BackupHelper.importData();
+                      if (context.mounted) {
+                        String message;
+                        if (count > 0) {
+                          message = '$count Alarme erfolgreich importiert!';
+                        } else if (count == 0) {
+                          message = 'Kein Backup ausgewählt.';
+                        } else {
+                          message = 'Fehler beim Einlesen der Datei.';
+                        }
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text(message)),
+                        );
+                      }
+                    },
+                    icon: const Icon(Icons.download),
+                    label: const Text('Importieren'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blueGrey,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                  ),
+                ),
+              ],
             ),
 
             const SizedBox(height: 28),
