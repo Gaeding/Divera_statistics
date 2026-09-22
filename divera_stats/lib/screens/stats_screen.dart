@@ -4,7 +4,8 @@ import 'package:intl/intl.dart';
 import '../models/alarm_model.dart';
 
 /// Bildschirm zur visuellen Aufbereitung der Einsatzstatistiken
-/// inklusive ausklappbarer Filter, Multi-Select Status-Filter und Diagrammen.
+/// inklusive ausklappbarer Filter, Multi-Select Status-Filter, Diagrammen
+/// und Monats-Drill-Down, der bei Klick auf einen Monat die tagesgenaue Ansicht zeigt.
 class StatsScreen extends StatefulWidget {
   final List<Alarm> alarms;
 
@@ -29,6 +30,9 @@ class _StatsScreenState extends State<StatsScreen> {
     '0',     // Keine Rückmeldung
   };
 
+  // Zustand für den aktiven Monats-Drill-Down (z.B. "09/26")
+  String? _drillDownMonth;
+
   @override
   Widget build(BuildContext context) {
     // 1. Stichworte dynamisch ermitteln und FEU, TH, BMA fix einbinden
@@ -40,7 +44,7 @@ class _StatsScreenState extends State<StatsScreen> {
     }
     final List<String> availableKeywords = keywordsSet.toList();
 
-    // 2. Gefilterte Alarme ermitteln
+    // 2. Gefilterte Alarme ermitteln (inkl. Drill-Down)
     final filteredAlarms = _getFilteredAlarms();
 
     return Scaffold(
@@ -54,6 +58,7 @@ class _StatsScreenState extends State<StatsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            
             // --- AUSKLAPPBARE FILTER-CARD ---
             Card(
               elevation: 2,
@@ -117,7 +122,7 @@ class _StatsScreenState extends State<StatsScreen> {
                         ),
                         const SizedBox(height: 16),
 
-                        // Status-Rückmeldungen Überschrift & Aktionen (Kompakt nebeneinander)
+                        // Status-Rückmeldungen Überschrift & Aktionen
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
@@ -251,15 +256,29 @@ class _StatsScreenState extends State<StatsScreen> {
 
               const SizedBox(height: 24),
 
-              // 5. Monats-Diagramm
-              const Text(
-                'Einsätze nach Monaten',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              // 5. Monats-Diagramm / Tages-Drill-Down Chart
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    _drillDownMonth == null
+                        ? 'Einsätze nach Monaten (Tippen für Tagesansicht)'
+                        : 'Tagesansicht im Monat $_drillDownMonth',
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                  if (_drillDownMonth != null)
+                    TextButton(
+                      onPressed: () => setState(() => _drillDownMonth = null),
+                      child: const Text('Monate anzeigen', style: TextStyle(fontSize: 12)),
+                    ),
+                ],
               ),
               const SizedBox(height: 12),
               SizedBox(
                 height: 220,
-                child: _buildMonthChart(filteredAlarms),
+                child: _drillDownMonth == null
+                    ? _buildMonthChart(filteredAlarms)
+                    : _buildDailyChartForMonth(filteredAlarms, _drillDownMonth!),
               ),
             ],
           ],
@@ -302,8 +321,9 @@ class _StatsScreenState extends State<StatsScreen> {
     List<String> activeFilters = [];
     if (_selectedTimeframe != 'all') activeFilters.add('Zeit: $_selectedTimeframe');
     if (_selectedKeyword != 'all') activeFilters.add('Stichwort: $_selectedKeyword');
+    if (_drillDownMonth != null) activeFilters.add('Monat: $_drillDownMonth');
     if (_selectedStatusValues.length < 6) {
-      activeFilters.add('Status (${_selectedStatusValues.length}/6 gewählt)');
+      activeFilters.add('Status (${_selectedStatusValues.length}/6)');
     }
 
     return activeFilters.isEmpty ? 'Alle Einsätze (keine Filter aktiv)' : activeFilters.join(' • ');
@@ -659,6 +679,7 @@ class _StatsScreenState extends State<StatsScreen> {
     );
   }
 
+  /// Monats-Diagramm mit Touch/Drill-Down auf den jeweiligen Monat
   Widget _buildMonthChart(List<Alarm> alarms) {
     Map<String, int> monthCounts = {};
     for (var alarm in alarms) {
@@ -675,7 +696,29 @@ class _StatsScreenState extends State<StatsScreen> {
       BarChartData(
         alignment: BarChartAlignment.spaceAround,
         maxY: maxY.toDouble(),
-        barTouchData: BarTouchDataNotifier().touchData,
+        barTouchData: BarTouchData(
+          enabled: true,
+          touchTooltipData: BarTouchTooltipData(
+            getTooltipItem: (group, groupIndex, rod, rodIndex) {
+              final monthKey = sortedKeys[group.x.toInt()];
+              return BarTooltipItem(
+                '$monthKey\n${rod.toY.toInt()} Einsätze (Tippen für Tagesansicht)',
+                const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11),
+              );
+            },
+          ),
+          touchCallback: (FlTouchEvent event, BarTouchResponse? response) {
+            if (event is FlTapUpEvent && response != null && response.spot != null) {
+              final touchedIndex = response.spot!.touchedBarGroupIndex;
+              if (touchedIndex >= 0 && touchedIndex < sortedKeys.length) {
+                final selectedMonth = sortedKeys[touchedIndex];
+                setState(() {
+                  _drillDownMonth = selectedMonth;
+                });
+              }
+            }
+          },
+        ),
         titlesData: FlTitlesData(
           show: true,
           topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
@@ -696,9 +739,13 @@ class _StatsScreenState extends State<StatsScreen> {
               showTitles: true,
               getTitlesWidget: (val, meta) {
                 if (val.toInt() >= 0 && val.toInt() < sortedKeys.length) {
+                  final monthStr = sortedKeys[val.toInt()];
                   return Padding(
                     padding: const EdgeInsets.only(top: 6.0),
-                    child: Text(sortedKeys[val.toInt()], style: const TextStyle(fontSize: 10)),
+                    child: Text(
+                      monthStr,
+                      style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
+                    ),
                   );
                 }
                 return const Text('');
@@ -709,14 +756,108 @@ class _StatsScreenState extends State<StatsScreen> {
         gridData: FlGridData(show: true, horizontalInterval: 1, drawVerticalLine: false),
         borderData: FlBorderData(show: false),
         barGroups: List.generate(sortedKeys.length, (i) {
+          final monthStr = sortedKeys[i];
           return BarChartGroupData(
             x: i,
             barRods: [
               BarChartRodData(
-                toY: monthCounts[sortedKeys[i]]!.toDouble(),
+                toY: monthCounts[monthStr]!.toDouble(),
                 color: Colors.redAccent,
                 width: 16,
                 borderRadius: BorderRadius.circular(4),
+              ),
+            ],
+          );
+        }),
+      ),
+    );
+  }
+
+  /// NEU: Tagesgenaues Diagramm für den ausgewählten Monat (Drill-Down Ansicht)
+  Widget _buildDailyChartForMonth(List<Alarm> alarms, String monthYearKey) {
+    // Teile z.B. "09/26" in Monat und Jahr auf
+    final parts = monthYearKey.split('/');
+    if (parts.length != 2) return const SizedBox.shrink();
+    
+    int targetMonth = int.tryParse(parts[0]) ?? 1;
+    int targetYear = 2000 + (int.tryParse(parts[1]) ?? 0);
+
+    // Ermittle die Anzahl der Tage im Monat
+    int daysInMonth = DateTime(targetYear, targetMonth + 1, 0).day;
+
+    // Zähle die Alarme tagesgenau (Index 0 = Tag 1, Index 30 = Tag 31)
+    List<int> dailyCounts = List.filled(daysInMonth, 0);
+    for (var alarm in alarms) {
+      if (alarm.date.month == targetMonth && alarm.date.year == targetYear) {
+        int dayIndex = alarm.date.day - 1;
+        if (dayIndex >= 0 && dayIndex < daysInMonth) {
+          dailyCounts[dayIndex]++;
+        }
+      }
+    }
+
+    int maxY = dailyCounts.isEmpty ? 4 : dailyCounts.reduce((a, b) => a > b ? a : b);
+    if (maxY < 4) maxY = 4;
+
+    return BarChart(
+      BarChartData(
+        alignment: BarChartAlignment.spaceAround,
+        maxY: maxY.toDouble(),
+        barTouchData: BarTouchData(
+          enabled: true,
+          touchTooltipData: BarTouchTooltipData(
+            getTooltipItem: (group, groupIndex, rod, rodIndex) {
+              int day = group.x.toInt() + 1;
+              return BarTooltipItem(
+                'Tag $day.$monthYearKey\n${rod.toY.toInt()} Einsätze',
+                const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11),
+              );
+            },
+          ),
+        ),
+        titlesData: FlTitlesData(
+          show: true,
+          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          leftTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              interval: 1,
+              reservedSize: 28,
+              getTitlesWidget: (val, meta) => Text(
+                val.toInt().toString(),
+                style: const TextStyle(fontSize: 10),
+              ),
+            ),
+          ),
+          bottomTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              getTitlesWidget: (val, meta) {
+                int day = val.toInt() + 1;
+                // Zeige alle 5 Tage eine Beschriftung (1, 5, 10, 15, 20, 25, 30), damit es übersichtlich bleibt
+                if (day == 1 || day % 5 == 0) {
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 6.0),
+                    child: Text('$day.', style: const TextStyle(fontSize: 9)),
+                  );
+                }
+                return const Text('');
+              },
+            ),
+          ),
+        ),
+        gridData: FlGridData(show: true, horizontalInterval: 1, drawVerticalLine: false),
+        borderData: FlBorderData(show: false),
+        barGroups: List.generate(daysInMonth, (i) {
+          return BarChartGroupData(
+            x: i,
+            barRods: [
+              BarChartRodData(
+                toY: dailyCounts[i].toDouble(),
+                color: Colors.amber,
+                width: daysInMonth > 28 ? 6 : 10, // Schmalere Balken bei 31 Tagen für saubere Abstände
+                borderRadius: BorderRadius.circular(2),
               ),
             ],
           );
