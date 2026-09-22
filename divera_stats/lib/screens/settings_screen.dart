@@ -502,7 +502,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   child: Column(
                     children: [
                       const Text(
-                        'Divera Stats v1.0.1',
+                        'Divera Stats v1.1.0',
                         style: TextStyle(
                             color: Colors.grey, fontWeight: FontWeight.bold),
                       ),

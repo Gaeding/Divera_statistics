@@ -70,8 +70,8 @@ Dieses Projekt wurde mit folgenden Kerntechnologien umgesetzt:
 * [x] Datenschutzkonformer Backup-Export
 * [x] Erweitertes Hintergrund-Logging (72h)
 * [x] iOS-Unterstützung (Apple App Store)
-* [ ] Weitere Diagrammtypen in der Statistik-Ansicht
-* [ ] Individuelle Filterung nach Einsatzstichworten
+* [x] Weitere Diagrammtypen in der Statistik-Ansicht
+* [x] Individuelle Filterung nach Einsatzstichworten
 
 ---
 
