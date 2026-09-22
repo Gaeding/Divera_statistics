@@ -11,6 +11,7 @@ import 'debug_db_screen.dart';
 import 'settings_screen.dart';
 import 'stats_screen.dart';
 import 'fire_game_dialog.dart'; // Import für das Feuerwehr-Minispiel (Easter Egg)
+import '../helpers/api_key_guide_helper.dart'; // Import für die API-Key Anleitung (Setup-Guide)
 
 /// Hauptbildschirm der Anwendung ("Divera Stats").
 /// Zeigt die Einsatzliste basierend auf dem gewählten Zeitfilter an,
@@ -52,8 +53,12 @@ class _HomeScreenState extends State<HomeScreen> {
       _timeframe = timeframe;
     });
 
-    // Automatische Initial-Synchronisation starten, falls ein API-Schlüssel hinterlegt ist
-    if (_savedApiKey.isNotEmpty) {
+    // Wenn kein Key hinterlegt ist, beim ersten Start direkt die Anleitung anzeigen oder sonst die Synchronisation starten
+    if (_savedApiKey.isEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        ApiKeyGuideHelper.showGuideDialog(context);
+      });
+    } else {
       _syncWithDivera();
     }
   }

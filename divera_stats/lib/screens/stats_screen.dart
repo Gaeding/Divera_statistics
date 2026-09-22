@@ -1,12 +1,10 @@
-import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+import 'package:fl_chart/fl_chart.dart';
+import 'package:intl/intl.dart';
 import '../models/alarm_model.dart';
 
-/// Enum zur zeitlichen Filterung im Statistik-Bereich.
-enum DateFilter { all, currentYear, currentMonth, currentWeek, lastYear }
-
-/// Statistik-Bildschirm der App.
-/// Bietet interaktive Filter und visualisiert Einsätze über Torten-, Wochentags- und Monatsdiagramme.
+/// Bildschirm zur visuellen Aufbereitung der Einsatzstatistiken
+/// inklusive ausklappbarer Filter, Multi-Select Status-Filter und Diagrammen.
 class StatsScreen extends StatefulWidget {
   final List<Alarm> alarms;
 
@@ -17,137 +15,33 @@ class StatsScreen extends StatefulWidget {
 }
 
 class _StatsScreenState extends State<StatsScreen> {
-  DateFilter _selectedDateFilter = DateFilter.all;
-  String _selectedKeyword = 'Alle';
+  // Filter-Zustände
+  String _selectedTimeframe = 'all';
+  String _selectedKeyword = 'all';
 
-  /// Extrahiert alle eindeutigen Einsatz-Stichwörter für das Filter-Dropdown.
-  List<String> _getAvailableKeywords() {
-    Set<String> keywords = {'Alle'};
-    for (var alarm in widget.alarms) {
-      if (alarm.title.isNotEmpty) {
-        keywords.add(alarm.title);
-      }
-    }
-    return keywords.toList();
-  }
-
-  /// Filtert die Alarm-Liste dynamisch nach gewähltem Zeitraum und Stichwort.
-  List<Alarm> get _filteredAlarms {
-    final now = DateTime.now();
-
-    return widget.alarms.where((alarm) {
-      bool matchesDate = true;
-      switch (_selectedDateFilter) {
-        case DateFilter.currentYear:
-          matchesDate = alarm.date.year == now.year;
-          break;
-        case DateFilter.currentMonth:
-          matchesDate =
-              alarm.date.year == now.year && alarm.date.month == now.month;
-          break;
-        case DateFilter.currentWeek:
-          final startOfWeek = now.subtract(Duration(days: now.weekday - 1));
-          final endOfWeek = startOfWeek.add(const Duration(days: 7));
-          matchesDate = alarm.date.isAfter(
-                  startOfWeek.subtract(const Duration(seconds: 1))) &&
-              alarm.date.isBefore(endOfWeek);
-          break;
-        case DateFilter.lastYear:
-          matchesDate = alarm.date.year == (now.year - 1);
-          break;
-        case DateFilter.all:
-        default:
-          matchesDate = true;
-          break;
-      }
-
-      bool matchesKeyword = true;
-      if (_selectedKeyword != 'Alle') {
-        matchesKeyword = alarm.title.toLowerCase().contains(_selectedKeyword.toLowerCase());
-      }
-
-      return matchesDate && matchesKeyword;
-    }).toList();
-  }
-
-  /// Aggregiert Einsätze nach Monaten ("MM/YY").
-  Map<String, int> _getMonthlyStats(List<Alarm> filtered) {
-    Map<String, int> stats = {};
-    for (var alarm in filtered) {
-      String monthKey =
-          "${alarm.date.month.toString().padLeft(2, '0')}/${alarm.date.year.toString().substring(2)}";
-      stats[monthKey] = (stats[monthKey] ?? 0) + 1;
-    }
-    return stats;
-  }
-
-  /// Aggregiert Einsätze nach Wochentagen (Montag bis Sonntag).
-  Map<String, int> _getWeekdayStats(List<Alarm> filtered) {
-    Map<String, int> stats = {
-      'Mo': 0,
-      'Di': 0,
-      'Mi': 0,
-      'Do': 0,
-      'Fr': 0,
-      'Sa': 0,
-      'So': 0,
-    };
-
-    const weekdayKeys = ['', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
-
-    for (var alarm in filtered) {
-      int wd = alarm.date.weekday; // 1 = Montag, 7 = Sonntag
-      if (wd >= 1 && wd <= 7) {
-        String key = weekdayKeys[wd];
-        stats[key] = (stats[key] ?? 0) + 1;
-      }
-    }
-    return stats;
-  }
-
-  /// Zählt die Verteilung der eigenen Rückmeldungen (`myStatusId`).
-  Map<String, int> _getStatusStats(List<Alarm> filtered) {
-    Map<String, int> stats = {
-      '3 Min': 0,
-      '8 Min': 0,
-      '>8 Min': 0,
-      'Nicht einsatzbereit': 0,
-      'Außer Dienst': 0,
-      'Sonstige': 0,
-    };
-
-    for (var alarm in filtered) {
-      switch (alarm.myStatusId) {
-        case 72063:
-          stats['3 Min'] = (stats['3 Min'] ?? 0) + 1;
-          break;
-        case 72066:
-          stats['8 Min'] = (stats['8 Min'] ?? 0) + 1;
-          break;
-        case 72067:
-          stats['>8 Min'] = (stats['>8 Min'] ?? 0) + 1;
-          break;
-        case 72062:
-          stats['Nicht einsatzbereit'] =
-              (stats['Nicht einsatzbereit'] ?? 0) + 1;
-          break;
-        case 72061:
-          stats['Außer Dienst'] = (stats['Außer Dienst'] ?? 0) + 1;
-          break;
-        default:
-          stats['Sonstige'] = (stats['Sonstige'] ?? 0) + 1;
-      }
-    }
-    return stats;
-  }
+  // Multi-Select Status-Filter: Standardmäßig sind alle relevanten IDs aktiv
+  final Set<String> _selectedStatusValues = {
+    '72063', // 3 Min
+    '72066', // 8 Min
+    '72067', // >8 Min
+    '72062', // Nicht einsatzbereit
+    '72061', // Außer Dienst
+    '0',     // Keine Rückmeldung
+  };
 
   @override
   Widget build(BuildContext context) {
-    final filteredList = _filteredAlarms;
-    final statusStats = _getStatusStats(filteredList);
-    final monthlyStats = _getMonthlyStats(filteredList);
-    final weekdayStats = _getWeekdayStats(filteredList);
-    final availableKeywords = _getAvailableKeywords();
+    // 1. Stichworte dynamisch ermitteln und FEU, TH, BMA fix einbinden
+    final Set<String> keywordsSet = {'all', 'FEU', 'TH', 'BMA'};
+    for (var alarm in widget.alarms) {
+      if (alarm.title.isNotEmpty) {
+        keywordsSet.add(alarm.title.trim());
+      }
+    }
+    final List<String> availableKeywords = keywordsSet.toList();
+
+    // 2. Gefilterte Alarme ermitteln
+    final filteredAlarms = _getFilteredAlarms();
 
     return Scaffold(
       appBar: AppBar(
@@ -155,311 +49,693 @@ class _StatsScreenState extends State<StatsScreen> {
         backgroundColor: Colors.redAccent,
         foregroundColor: Colors.white,
       ),
-      body: Column(
-        children: [
-          // Filter-Bereich am oberen Bildschirmrand
-          Container(
-            padding: const EdgeInsets.all(12.0),
-            color: Theme.of(context).brightness == Brightness.dark
-                ? Colors.grey.shade900
-                : Colors.grey.shade100,
-            child: Column(
-              children: [
-                // Zeitraum-Auswahl
-                Row(
-                  children: [
-                    const Icon(Icons.calendar_today, size: 20, color: Colors.grey),
-                    const SizedBox(width: 8),
-                    const Text('Zeitraum:', style: TextStyle(fontWeight: FontWeight.bold)),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: DropdownButton<DateFilter>(
-                        value: _selectedDateFilter,
-                        isExpanded: true,
-                        underline: Container(height: 1, color: Colors.grey),
-                        items: const [
-                          DropdownMenuItem(value: DateFilter.all, child: Text('Alle Daten')),
-                          DropdownMenuItem(value: DateFilter.currentYear, child: Text('Dieses Jahr')),
-                          DropdownMenuItem(value: DateFilter.currentMonth, child: Text('Dieser Monat')),
-                          DropdownMenuItem(value: DateFilter.currentWeek, child: Text('Diese Woche')),
-                          DropdownMenuItem(value: DateFilter.lastYear, child: Text('Letztes Jahr')),
-                        ],
-                        onChanged: (value) {
-                          if (value != null) {
-                            setState(() => _selectedDateFilter = value);
-                          }
-                        },
-                      ),
-                    ),
-                  ],
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // --- AUSKLAPPBARE FILTER-CARD ---
+            Card(
+              elevation: 2,
+              margin: const EdgeInsets.only(bottom: 16),
+              clipBehavior: Clip.antiAlias,
+              child: ExpansionTile(
+                initiallyExpanded: false,
+                leading: const Icon(Icons.filter_list, color: Colors.redAccent),
+                title: Text(
+                  'Filter anpassen (${filteredAlarms.length} Einsätze)',
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
                 ),
-                const SizedBox(height: 8),
-                // Stichwort-Auswahl
-                Row(
-                  children: [
-                    const Icon(Icons.label, size: 20, color: Colors.grey),
-                    const SizedBox(width: 8),
-                    const Text('Stichwort:', style: TextStyle(fontWeight: FontWeight.bold)),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: DropdownButton<String>(
-                        value: availableKeywords.contains(_selectedKeyword)
-                            ? _selectedKeyword
-                            : 'Alle',
-                        isExpanded: true,
-                        underline: Container(height: 1, color: Colors.grey),
-                        items: availableKeywords.map((keyword) {
-                          return DropdownMenuItem(
-                            value: keyword,
-                            child: Text(keyword),
-                          );
-                        }).toList(),
-                        onChanged: (value) {
-                          if (value != null) {
-                            setState(() => _selectedKeyword = value);
-                          }
-                        },
-                      ),
-                    ),
-                  ],
+                subtitle: Text(
+                  _getFilterSummaryText(),
+                  style: const TextStyle(fontSize: 12, color: Colors.grey),
                 ),
-              ],
-            ),
-          ),
-          // Scrollbarer Statistik-Bereich
-          Expanded(
-            child: filteredList.isEmpty
-                ? const Center(
-                    child: Text('Keine Einsätze für die ausgewählten Filter gefunden.'),
-                  )
-                : SingleChildScrollView(
-                    padding: const EdgeInsets.all(16.0),
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Kennzahl-Kachel: Summe der gefilterten Einsätze
-                        Card(
-                          color: Colors.redAccent.shade100,
-                          child: Padding(
-                            padding: const EdgeInsets.all(16.0),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                const Text(
-                                  'Gefilterte Einsätze',
-                                  style: TextStyle(
-                                      fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black87),
-                                ),
-                                Text(
-                                  '${filteredList.length}',
-                                  style: const TextStyle(
-                                      fontSize: 24, fontWeight: FontWeight.bold, color: Colors.black87),
-                                ),
-                              ],
-                            ),
+                        const Divider(),
+                        
+                        // Zeitraum Filter
+                        DropdownButtonFormField<String>(
+                          value: _selectedTimeframe,
+                          decoration: const InputDecoration(
+                            labelText: 'Zeitraum',
+                            prefixIcon: Icon(Icons.calendar_today, size: 20),
                           ),
-                        ),
-                        const SizedBox(height: 20),
-
-                        // Tortendiagramm: Rückmeldungen
-                        const Text(
-                          'Verteilung deiner Rückmeldungen',
-                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                        ),
-                        const SizedBox(height: 12),
-                        SizedBox(
-                          height: 200,
-                          child: PieChart(
-                            PieChartData(
-                              sectionsSpace: 2,
-                              centerSpaceRadius: 35,
-                              sections: [
-                                if ((statusStats['3 Min'] ?? 0) > 0)
-                                  PieChartSectionData(
-                                    color: Colors.green,
-                                    value: statusStats['3 Min']!.toDouble(),
-                                    title: '${statusStats['3 Min']}',
-                                    radius: 45,
-                                    titleStyle: const TextStyle(
-                                        color: Colors.white, fontWeight: FontWeight.bold),
-                                  ),
-                                if ((statusStats['8 Min'] ?? 0) > 0)
-                                  PieChartSectionData(
-                                    color: Colors.yellow.shade700,
-                                    value: statusStats['8 Min']!.toDouble(),
-                                    title: '${statusStats['8 Min']}',
-                                    radius: 45,
-                                    titleStyle: const TextStyle(
-                                        color: Colors.black, fontWeight: FontWeight.bold),
-                                  ),
-                                if ((statusStats['>8 Min'] ?? 0) > 0)
-                                  PieChartSectionData(
-                                    color: Colors.orange,
-                                    value: statusStats['>8 Min']!.toDouble(),
-                                    title: '${statusStats['>8 Min']}',
-                                    radius: 45,
-                                    titleStyle: const TextStyle(
-                                        color: Colors.white, fontWeight: FontWeight.bold),
-                                  ),
-                                if ((statusStats['Nicht einsatzbereit'] ?? 0) > 0)
-                                  PieChartSectionData(
-                                    color: Colors.red,
-                                    value: statusStats['Nicht einsatzbereit']!.toDouble(),
-                                    title: '${statusStats['Nicht einsatzbereit']}',
-                                    radius: 45,
-                                    titleStyle: const TextStyle(
-                                        color: Colors.white, fontWeight: FontWeight.bold),
-                                  ),
-                                if ((statusStats['Außer Dienst'] ?? 0) > 0)
-                                  PieChartSectionData(
-                                    color: Colors.red.shade900,
-                                    value: statusStats['Außer Dienst']!.toDouble(),
-                                    title: '${statusStats['Außer Dienst']}',
-                                    radius: 45,
-                                    titleStyle: const TextStyle(
-                                        color: Colors.white, fontWeight: FontWeight.bold),
-                                  ),
-                              ],
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        // Legende zum Tortendiagramm
-                        Wrap(
-                          spacing: 12,
-                          runSpacing: 8,
-                          children: [
-                            _buildLegendItem('3 Min', Colors.green),
-                            _buildLegendItem('8 Min', Colors.yellow.shade700),
-                            _buildLegendItem('>8 Min', Colors.orange),
-                            _buildLegendItem('Nicht einsatzbereit', Colors.red),
-                            _buildLegendItem('Außer Dienst', Colors.red.shade900),
+                          items: const [
+                            DropdownMenuItem(value: '24h', child: Text('Letzte 24 Stunden')),
+                            DropdownMenuItem(value: 'week', child: Text('Letzte 7 Tage')),
+                            DropdownMenuItem(value: 'month', child: Text('Letzte 30 Tage')),
+                            DropdownMenuItem(value: 'year', child: Text('Letztes Jahr (365 Tage)')),
+                            DropdownMenuItem(value: 'all', child: Text('Alle Daten')),
                           ],
+                          onChanged: (val) {
+                            if (val != null) setState(() => _selectedTimeframe = val);
+                          },
                         ),
-                        const SizedBox(height: 24),
+                        const SizedBox(height: 12),
 
-                        // Säulendiagramm: Einsätze nach Wochentagen
-                        const Text(
-                          'Einsätze nach Wochentagen',
-                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                        // Stichwort Filter
+                        DropdownButtonFormField<String>(
+                          value: availableKeywords.contains(_selectedKeyword) ? _selectedKeyword : 'all',
+                          decoration: const InputDecoration(
+                            labelText: 'Stichwort',
+                            prefixIcon: Icon(Icons.label_outline, size: 20),
+                          ),
+                          items: availableKeywords.map((kw) {
+                            return DropdownMenuItem(
+                              value: kw,
+                              child: Text(kw == 'all' ? 'Alle Stichworte' : kw),
+                            );
+                          }).toList(),
+                          onChanged: (val) {
+                            if (val != null) setState(() => _selectedKeyword = val);
+                          },
                         ),
                         const SizedBox(height: 16),
-                        SizedBox(
-                          height: 200,
-                          child: BarChart(
-                            BarChartData(
-                              borderData: FlBorderData(show: false),
-                              titlesData: FlTitlesData(
-                                rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                                topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                                bottomTitles: AxisTitles(
-                                  sideTitles: SideTitles(
-                                    showTitles: true,
-                                    getTitlesWidget: (value, meta) {
-                                      List<String> keys = weekdayStats.keys.toList();
-                                      int index = value.toInt();
-                                      if (index >= 0 && index < keys.length) {
-                                        return Padding(
-                                          padding: const EdgeInsets.only(top: 6),
-                                          child: Text(
-                                            keys[index],
-                                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
-                                          ),
-                                        );
-                                      }
-                                      return const Text('');
-                                    },
-                                  ),
-                                ),
+
+                        // Status-Rückmeldungen Überschrift & Aktionen (Kompakt nebeneinander)
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Expanded(
+                              child: Text(
+                                'Status-Rückmeldungen:',
+                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                               ),
-                              barGroups: weekdayStats.entries.toList().asMap().entries.map((entry) {
-                                return BarChartGroupData(
-                                  x: entry.key,
-                                  barRods: [
-                                    BarChartRodData(
-                                      toY: entry.value.value.toDouble(),
-                                      color: Colors.orangeAccent,
-                                      width: 16,
-                                      borderRadius: BorderRadius.circular(4),
-                                    )
-                                  ],
-                                );
-                              }).toList(),
                             ),
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                TextButton(
+                                  onPressed: () {
+                                    setState(() {
+                                      _selectedStatusValues.addAll(['72063', '72066', '72067', '72062', '72061', '0']);
+                                    });
+                                  },
+                                  style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(40, 30)),
+                                  child: const Text('Alle', style: TextStyle(fontSize: 12)),
+                                ),
+                                const Text('•', style: TextStyle(color: Colors.grey)),
+                                TextButton(
+                                  onPressed: () {
+                                    setState(() {
+                                      _selectedStatusValues.clear();
+                                    });
+                                  },
+                                  style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(40, 30)),
+                                  child: const Text('Keine', style: TextStyle(fontSize: 12)),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+
+                        // Checkbox-Liste für Status-Rückmeldungen
+                        Container(
+                          decoration: BoxDecoration(
+                            border: Border.all(color: Colors.grey.shade700),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Column(
+                            children: [
+                              _buildCheckboxTile('Nur 3 Min', '72063', Colors.green),
+                              _buildCheckboxTile('Nur 8 Min', '72066', Colors.yellow.shade700),
+                              _buildCheckboxTile('Nur >8 Min', '72067', Colors.orange),
+                              _buildCheckboxTile('Nicht einsatzbereit', '72062', Colors.red),
+                              _buildCheckboxTile('Außer Dienst', '72061', Colors.red.shade900),
+                              _buildCheckboxTile('Keine Rückmeldung', '0', Colors.grey),
+                            ],
                           ),
                         ),
-                        const SizedBox(height: 24),
-
-                        // Säulendiagramm: Einsätze nach Monaten
-                        if (monthlyStats.isNotEmpty) ...[
-                          const Text(
-                            'Einsätze nach Monaten',
-                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                          ),
-                          const SizedBox(height: 16),
-                          SizedBox(
-                            height: 200,
-                            child: BarChart(
-                              BarChartData(
-                                borderData: FlBorderData(show: false),
-                                titlesData: FlTitlesData(
-                                  rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                                  topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                                  bottomTitles: AxisTitles(
-                                    sideTitles: SideTitles(
-                                      showTitles: true,
-                                      getTitlesWidget: (value, meta) {
-                                        List<String> keys = monthlyStats.keys.toList();
-                                        int index = value.toInt();
-                                        if (index >= 0 && index < keys.length) {
-                                          return Padding(
-                                            padding: const EdgeInsets.only(top: 6),
-                                            child: Text(
-                                              keys[index],
-                                              style: const TextStyle(fontSize: 10),
-                                            ),
-                                          );
-                                        }
-                                        return const Text('');
-                                      },
-                                    ),
-                                  ),
-                                ),
-                                barGroups: monthlyStats.entries.toList().asMap().entries.map((entry) {
-                                  return BarChartGroupData(
-                                    x: entry.key,
-                                    barRods: [
-                                      BarChartRodData(
-                                        toY: entry.value.value.toDouble(),
-                                        color: Colors.redAccent,
-                                        width: 16,
-                                        borderRadius: BorderRadius.circular(4),
-                                      )
-                                    ],
-                                  );
-                                }).toList(),
-                              ),
-                            ),
-                          ),
-                        ],
                       ],
                     ),
                   ),
-          ),
-        ],
+                ],
+              ),
+            ),
+
+            // --- DIAGRAMME & AUSWERTUNGEN ---
+            if (filteredAlarms.isEmpty)
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(32.0),
+                  child: Text(
+                    'Keine Einsätze für die gewählte Filterkombination vorhanden.',
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              )
+            else ...[
+              Padding(
+                padding: const EdgeInsets.only(bottom: 16.0),
+                child: Text(
+                  'Auswertung basierend auf ${filteredAlarms.length} gefilterten Einsätzen',
+                  style: TextStyle(fontWeight: FontWeight.w600, color: Colors.grey.shade400),
+                ),
+              ),
+
+              // 1. Status-Verteilung (PieChart)
+              const Text(
+                'Status-Verteilung',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                height: 200,
+                child: _buildStatusPieChart(filteredAlarms),
+              ),
+
+              const SizedBox(height: 24),
+
+              // 2. Stichwort-Verteilung (FEU, TH, BMA, Sonstige)
+              const Text(
+                'Einsätze nach Stichwort (FEU / TH / BMA)',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                height: 200,
+                child: _buildKeywordPieChart(filteredAlarms),
+              ),
+
+              const SizedBox(height: 24),
+
+              // 3. Wochentags-Diagramm
+              const Text(
+                'Einsätze nach Wochentagen',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                height: 220,
+                child: _buildWeekdayChart(filteredAlarms),
+              ),
+
+              const SizedBox(height: 24),
+
+              // 4. Uhrzeit-Diagramm (Stundengenau)
+              const Text(
+                'Einsätze nach Uhrzeit (Stunden)',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                height: 220,
+                child: _buildHourlyChart(filteredAlarms),
+              ),
+
+              const SizedBox(height: 24),
+
+              // 5. Monats-Diagramm
+              const Text(
+                'Einsätze nach Monaten',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                height: 220,
+                child: _buildMonthChart(filteredAlarms),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }
 
-  /// Hilfswidget zum Erstellen eines Legenden-Eintrags.
-  Widget _buildLegendItem(String title, Color color) {
+  Widget _buildCheckboxTile(String label, String valueKey, Color color) {
+    final isSelected = _selectedStatusValues.contains(valueKey);
+    return CheckboxListTile(
+      title: Row(
+        children: [
+          Container(
+            width: 12,
+            height: 12,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 8),
+          Expanded(child: Text(label, style: const TextStyle(fontSize: 13))),
+        ],
+      ),
+      value: isSelected,
+      dense: true,
+      controlAffinity: ListTileControlAffinity.leading,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+      onChanged: (bool? checked) {
+        setState(() {
+          if (checked == true) {
+            _selectedStatusValues.add(valueKey);
+          } else {
+            _selectedStatusValues.remove(valueKey);
+          }
+        });
+      },
+    );
+  }
+
+  String _getFilterSummaryText() {
+    List<String> activeFilters = [];
+    if (_selectedTimeframe != 'all') activeFilters.add('Zeit: $_selectedTimeframe');
+    if (_selectedKeyword != 'all') activeFilters.add('Stichwort: $_selectedKeyword');
+    if (_selectedStatusValues.length < 6) {
+      activeFilters.add('Status (${_selectedStatusValues.length}/6 gewählt)');
+    }
+
+    return activeFilters.isEmpty ? 'Alle Einsätze (keine Filter aktiv)' : activeFilters.join(' • ');
+  }
+
+  List<Alarm> _getFilteredAlarms() {
+    final now = DateTime.now();
+
+    return widget.alarms.where((alarm) {
+      // 1. Zeit-Filter
+      bool matchesTime = true;
+      switch (_selectedTimeframe) {
+        case '24h':
+          matchesTime = alarm.date.isAfter(now.subtract(const Duration(hours: 24)));
+          break;
+        case 'week':
+          matchesTime = alarm.date.isAfter(now.subtract(const Duration(days: 7)));
+          break;
+        case 'month':
+          matchesTime = alarm.date.isAfter(now.subtract(const Duration(days: 30)));
+          break;
+        case 'year':
+          matchesTime = alarm.date.isAfter(now.subtract(const Duration(days: 365)));
+          break;
+      }
+      if (!matchesTime) return false;
+
+      // 2. Stichwort-Filter
+      if (_selectedKeyword != 'all') {
+        final title = alarm.title.trim();
+        if (_selectedKeyword == 'FEU') {
+          if (!title.contains('FEU')) return false;
+        } else if (_selectedKeyword == 'TH') {
+          if (!title.contains('TH')) return false;
+        } else if (_selectedKeyword == 'BMA') {
+          if (!title.contains('BMA')) return false;
+        } else {
+          if (title != _selectedKeyword) return false;
+        }
+      }
+
+      // 3. Status-Filter (Mehrfachauswahl prüfen)
+      final statusKey = alarm.myStatusId.toString();
+      if (!_selectedStatusValues.contains(statusKey)) {
+        return false;
+      }
+
+      return true;
+    }).toList();
+  }
+
+  Widget _buildStatusPieChart(List<Alarm> alarms) {
+    Map<String, int> statusCounts = {};
+    for (var alarm in alarms) {
+      final label = alarm.myStatusInfo.label;
+      statusCounts[label] = (statusCounts[label] ?? 0) + 1;
+    }
+
+    final sections = statusCounts.entries.map((entry) {
+      final color = _getStatusColor(entry.key);
+      return PieChartSectionData(
+        color: color,
+        value: entry.value.toDouble(),
+        title: '${entry.value}',
+        radius: 50,
+        titleStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
+      );
+    }).toList();
+
     return Row(
-      mainAxisSize: MainAxisSize.min,
       children: [
-        Container(width: 12, height: 12, color: color),
-        const SizedBox(width: 4),
-        Text(title, style: const TextStyle(fontSize: 12)),
+        Expanded(
+          flex: 3,
+          child: PieChart(
+            PieChartData(
+              sectionsSpace: 2,
+              centerSpaceRadius: 35,
+              sections: sections,
+            ),
+          ),
+        ),
+        Expanded(
+          flex: 2,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: statusCounts.entries.map((entry) {
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2.0),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 10,
+                      height: 10,
+                      decoration: BoxDecoration(
+                        color: _getStatusColor(entry.key),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        '${entry.key} (${entry.value})',
+                        style: const TextStyle(fontSize: 11),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }).toList(),
+          ),
+        ),
       ],
     );
   }
+
+  Widget _buildKeywordPieChart(List<Alarm> alarms) {
+    int feuCount = 0;
+    int thCount = 0;
+    int bmaCount = 0;
+    int otherCount = 0;
+
+    for (var alarm in alarms) {
+      final title = alarm.title.toUpperCase();
+      if (title.contains('BMA')) {
+        bmaCount++;
+      } else if (title.contains('FEU')) {
+        feuCount++;
+      } else if (title.contains('TH')) {
+        thCount++;
+      } else {
+        otherCount++;
+      }
+    }
+
+    Map<String, int> keywordData = {};
+    if (feuCount > 0) keywordData['FEU'] = feuCount;
+    if (thCount > 0) keywordData['TH'] = thCount;
+    if (bmaCount > 0) keywordData['BMA'] = bmaCount;
+    if (otherCount > 0) keywordData['Sonstige'] = otherCount;
+
+    if (keywordData.isEmpty) {
+      return const Center(child: Text('Keine Stichworte vorhanden'));
+    }
+
+    final sections = keywordData.entries.map((entry) {
+      final color = _getKeywordColor(entry.key);
+      return PieChartSectionData(
+        color: color,
+        value: entry.value.toDouble(),
+        title: '${entry.value}',
+        radius: 50,
+        titleStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
+      );
+    }).toList();
+
+    return Row(
+      children: [
+        Expanded(
+          flex: 3,
+          child: PieChart(
+            PieChartData(
+              sectionsSpace: 2,
+              centerSpaceRadius: 35,
+              sections: sections,
+            ),
+          ),
+        ),
+        Expanded(
+          flex: 2,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: keywordData.entries.map((entry) {
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2.0),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 10,
+                      height: 10,
+                      decoration: BoxDecoration(
+                        color: _getKeywordColor(entry.key),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        '${entry.key} (${entry.value})',
+                        style: const TextStyle(fontSize: 11),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }).toList(),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Color _getStatusColor(String label) {
+    if (label.contains('3')) return Colors.green;
+    if (label.contains('8')) return Colors.yellow.shade700;
+    if (label.contains('Nicht') || label.contains('nein')) return Colors.red;
+    if (label.contains('Außer')) return Colors.red.shade900;
+    return Colors.grey;
+  }
+
+  Color _getKeywordColor(String keyword) {
+    switch (keyword) {
+      case 'FEU':
+        return Colors.deepOrange;
+      case 'TH':
+        return Colors.blue;
+      case 'BMA':
+        return Colors.purple;
+      case 'Sonstige':
+      default:
+        return Colors.blueGrey;
+    }
+  }
+
+  Widget _buildWeekdayChart(List<Alarm> alarms) {
+    List<int> weekdayCounts = List.filled(7, 0);
+    for (var alarm in alarms) {
+      weekdayCounts[alarm.date.weekday - 1]++;
+    }
+
+    int maxY = weekdayCounts.reduce((a, b) => a > b ? a : b);
+    if (maxY < 4) maxY = 4;
+
+    return BarChart(
+      BarChartData(
+        alignment: BarChartAlignment.spaceAround,
+        maxY: maxY.toDouble(),
+        barTouchData: BarTouchDataNotifier().touchData,
+        titlesData: FlTitlesData(
+          show: true,
+          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          leftTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              interval: 1,
+              reservedSize: 28,
+              getTitlesWidget: (val, meta) => Text(
+                val.toInt().toString(),
+                style: const TextStyle(fontSize: 10),
+              ),
+            ),
+          ),
+          bottomTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              getTitlesWidget: (val, meta) {
+                const days = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
+                if (val.toInt() >= 0 && val.toInt() < days.length) {
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 6.0),
+                    child: Text(days[val.toInt()], style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                  );
+                }
+                return const Text('');
+              },
+            ),
+          ),
+        ),
+        gridData: FlGridData(show: true, horizontalInterval: 1, drawVerticalLine: false),
+        borderData: FlBorderData(show: false),
+        barGroups: List.generate(7, (i) {
+          return BarChartGroupData(
+            x: i,
+            barRods: [
+              BarChartRodData(
+                toY: weekdayCounts[i].toDouble(),
+                color: Colors.orangeAccent,
+                width: 16,
+                borderRadius: BorderRadius.circular(4),
+              ),
+            ],
+          );
+        }),
+      ),
+    );
+  }
+
+  Widget _buildHourlyChart(List<Alarm> alarms) {
+    List<int> hourlyCounts = List.filled(24, 0);
+    for (var alarm in alarms) {
+      hourlyCounts[alarm.date.hour]++;
+    }
+
+    int maxY = hourlyCounts.reduce((a, b) => a > b ? a : b);
+    if (maxY < 4) maxY = 4;
+
+    return BarChart(
+      BarChartData(
+        alignment: BarChartAlignment.spaceAround,
+        maxY: maxY.toDouble(),
+        barTouchData: BarTouchDataNotifier().touchData,
+        titlesData: FlTitlesData(
+          show: true,
+          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          leftTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              interval: 1,
+              reservedSize: 28,
+              getTitlesWidget: (val, meta) => Text(
+                val.toInt().toString(),
+                style: const TextStyle(fontSize: 10),
+              ),
+            ),
+          ),
+          bottomTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              getTitlesWidget: (val, meta) {
+                int hour = val.toInt();
+                if (hour >= 0 && hour < 24 && hour % 3 == 0) {
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 6.0),
+                    child: Text('${hour}h', style: const TextStyle(fontSize: 10)),
+                  );
+                }
+                return const Text('');
+              },
+            ),
+          ),
+        ),
+        gridData: FlGridData(show: true, horizontalInterval: 1, drawVerticalLine: false),
+        borderData: FlBorderData(show: false),
+        barGroups: List.generate(24, (i) {
+          return BarChartGroupData(
+            x: i,
+            barRods: [
+              BarChartRodData(
+                toY: hourlyCounts[i].toDouble(),
+                color: Colors.amber,
+                width: 8,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ],
+          );
+        }),
+      ),
+    );
+  }
+
+  Widget _buildMonthChart(List<Alarm> alarms) {
+    Map<String, int> monthCounts = {};
+    for (var alarm in alarms) {
+      final key = DateFormat('MM/yy').format(alarm.date);
+      monthCounts[key] = (monthCounts[key] ?? 0) + 1;
+    }
+
+    final sortedKeys = monthCounts.keys.toList()..sort();
+
+    int maxY = monthCounts.values.isEmpty ? 4 : monthCounts.values.reduce((a, b) => a > b ? a : b);
+    if (maxY < 4) maxY = 4;
+
+    return BarChart(
+      BarChartData(
+        alignment: BarChartAlignment.spaceAround,
+        maxY: maxY.toDouble(),
+        barTouchData: BarTouchDataNotifier().touchData,
+        titlesData: FlTitlesData(
+          show: true,
+          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          leftTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              interval: 1,
+              reservedSize: 28,
+              getTitlesWidget: (val, meta) => Text(
+                val.toInt().toString(),
+                style: const TextStyle(fontSize: 10),
+              ),
+            ),
+          ),
+          bottomTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              getTitlesWidget: (val, meta) {
+                if (val.toInt() >= 0 && val.toInt() < sortedKeys.length) {
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 6.0),
+                    child: Text(sortedKeys[val.toInt()], style: const TextStyle(fontSize: 10)),
+                  );
+                }
+                return const Text('');
+              },
+            ),
+          ),
+        ),
+        gridData: FlGridData(show: true, horizontalInterval: 1, drawVerticalLine: false),
+        borderData: FlBorderData(show: false),
+        barGroups: List.generate(sortedKeys.length, (i) {
+          return BarChartGroupData(
+            x: i,
+            barRods: [
+              BarChartRodData(
+                toY: monthCounts[sortedKeys[i]]!.toDouble(),
+                color: Colors.redAccent,
+                width: 16,
+                borderRadius: BorderRadius.circular(4),
+              ),
+            ],
+          );
+        }),
+      ),
+    );
+  }
+}
+
+class BarTouchDataNotifier {
+  BarTouchData get touchData => BarTouchData(
+        enabled: true,
+        touchTooltipData: BarTouchTooltipData(
+          getTooltipItem: (group, groupIndex, rod, rodIndex) {
+            return BarTooltipItem(
+              rod.toY.toInt().toString(),
+              const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+            );
+          },
+        ),
+      );
 }

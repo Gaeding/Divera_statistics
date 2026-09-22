@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../main.dart'; // Zugriff auf den globalen themeNotifier
 import '../services/backup_helper.dart'; // Import für den Backup- und Datenschutz-Export
+import '../helpers/api_key_guide_helper.dart'; // NEU: Import für die API-Key Anleitung
 
 /// Einstellungsbildschirm der App.
 /// Erlaubt die direkte Verwaltung von API-Key (mit eigenem Speicher-Button),
@@ -170,10 +171,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
             const SizedBox(height: 16),
             TextField(
               controller: _apiKeyController,
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 labelText: 'DIVERA Accesskey',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.key),
+                border: const OutlineInputBorder(),
+                prefixIcon: const Icon(Icons.key),
+                // NEU: Hilfe-Icon direkt im Eingabefeld integriert
+                suffixIcon: IconButton(
+                  icon: const Icon(Icons.help_outline, color: Colors.redAccent),
+                  tooltip: 'Wo finde ich meinen API-Key?',
+                  onPressed: () => ApiKeyGuideHelper.showGuideDialog(context),
+                ),
               ),
             ),
             const SizedBox(height: 12),
@@ -269,7 +276,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             const Divider(),
             const SizedBox(height: 12),
 
-            // --- NEU: Sektion: Daten & Backup (Exklusive Adressen) ---
+            // --- Sektion: Daten & Backup (Exklusive Adressen) ---
             const Text(
               'Daten & Backup',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
